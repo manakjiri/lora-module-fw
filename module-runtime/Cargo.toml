@@ -50,3 +50,8 @@ features = ["nightly", "unstable-traits", "defmt", "defmt-timestamp-uptime", "ti
 [dependencies.embassy-embedded-hal]
 git = "https://github.com/embassy-rs/embassy.git"
 rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"
+
+[dependencies.embassy-lora]
+git = "https://github.com/embassy-rs/embassy.git"
+rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"
+features = ["stm32wl", "time", "defmt"]
