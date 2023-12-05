@@ -23,7 +23,7 @@ lora-phy = { version = "2" }
 defmt = "0.3"
 defmt-rtt = "0.4"
 
-postcard = "1.0"
+postcard = { version = "1.0.8", default-features = false, features = ["use-crc"]}
 serde = { version = "1.0", default-features = false }
 
 

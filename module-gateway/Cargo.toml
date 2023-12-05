@@ -1,0 +1,21 @@
+[package]
+authors = ["Jiri Manak"]
+edition = "2021"
+readme = "README.md"
+name = "module-gateway"
+version = "0.1.0"
+
+[dependencies]
+module-runtime = { path = "../module-runtime" }
+
+
+[dependencies.embassy-executor]
+git = "https://github.com/embassy-rs/embassy.git"
+rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"
+features = ["nightly", "arch-cortex-m", "executor-thread", "defmt", "integrated-timers"]
+
+
+[profile.release]
+codegen-units = 1 # better optimizations
+lto = true # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
