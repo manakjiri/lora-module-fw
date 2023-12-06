@@ -14,7 +14,7 @@ type UartBuffer = [u8; 128];
 #[derive(Debug, defmt::Format, PartialEq)]
 enum Error {
     MessageTooShort,
-    UnknownType,
+    MessageUnknownType,
     Usart(usart::Error),
     LoRa(RadioError),
 }
@@ -51,7 +51,7 @@ async fn process_host_message(
         }
         // unhandled
         _ => {
-            return Err(Error::UnknownType);
+            return Err(Error::MessageUnknownType);
         }
     }
     Ok(())
@@ -66,7 +66,7 @@ async fn main(_spawner: Spawner) {
         let result = module.uart.read_until_idle(&mut uart_buffer).await;
         match result {
             Ok(size) => {
-                info!("size {}", size);
+                //info!("size {}", size);
                 match process_host_message(&mut module, uart_buffer.as_slice()).await {
                     Ok(()) => {}
                     Err(e) => {
