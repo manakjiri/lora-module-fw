@@ -38,7 +38,10 @@ async fn process_host_message(
     match uart_buffer[0] {
         // ping
         0 => {
-            module.uart.write(uart_buffer).await.map_err(Error::Usart)?;
+            module
+                .host_uart_write(uart_buffer)
+                .await
+                .map_err(Error::Usart)?;
         }
         // transmit lora
         1 => {
@@ -46,7 +49,10 @@ async fn process_host_message(
                 let mut rx = [0u8; 128];
                 lora_message(module, &uart_buffer[1..], &mut rx[1..]).await?;
                 rx[0] = 1;
-                module.uart.write(uart_buffer).await.map_err(Error::Usart)?;
+                module
+                    .host_uart_write(uart_buffer)
+                    .await
+                    .map_err(Error::Usart)?;
             }
         }
         // unhandled
@@ -63,11 +69,11 @@ async fn main(_spawner: Spawner) {
 
     let mut uart_buffer: UartBuffer = [0u8; 128];
     loop {
-        let result = module.uart.read_until_idle(&mut uart_buffer).await;
+        let result = module.host_uart_read_until_idle(&mut uart_buffer).await;
         match result {
             Ok(size) => {
                 //info!("size {}", size);
-                match process_host_message(&mut module, uart_buffer.as_slice()).await {
+                match process_host_message(&mut module, &uart_buffer[..size]).await {
                     Ok(()) => {}
                     Err(e) => {
                         error!("{}", e);

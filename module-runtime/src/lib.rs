@@ -31,7 +31,10 @@ use lora_phy::mod_params::*;
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 
+mod host;
+
 const LORA_FREQUENCY_IN_HZ: u32 = 869_525_000; // warning: set this appropriately for the region
+const HOST_UART_BUFFER_SIZE: usize = 256;
 
 bind_interrupts!(struct Irqs{
     LPUART1 => usart::InterruptHandler<peripherals::LPUART1>;
@@ -39,19 +42,20 @@ bind_interrupts!(struct Irqs{
 });
 
 pub struct ModuleInterface {
-    pub uart: Uart<'static, peripherals::LPUART1, peripherals::DMA1_CH3, peripherals::DMA1_CH4>,
-    pub lora: LoRa<
+    uart: Uart<'static, peripherals::LPUART1, peripherals::DMA1_CH3, peripherals::DMA1_CH4>,
+
+    lora: LoRa<
         SX1261_2<
             Spi<'static, peripherals::SUBGHZSPI, peripherals::DMA1_CH1, peripherals::DMA1_CH2>,
             Stm32wlInterfaceVariant<Output<'static, AnyPin>>,
         >,
         Delay,
     >,
-    pub led: Output<'static, AnyPin>,
-
     lora_modulation: ModulationParams,
     lora_tx_params: PacketParams,
     lora_rx_params: PacketParams,
+
+    pub led: Output<'static, AnyPin>,
 }
 
 impl ModuleInterface {
@@ -86,6 +90,22 @@ impl ModuleInterface {
             }
             Err(err) => Err(err),
         }
+    }
+
+    pub async fn host_uart_read_until_idle(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<usize, usart::Error> {
+        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
+        let len = self.uart.read_until_idle(&mut buff).await?;
+        //info!("len {}", len);
+        Ok(host::maxval_decode(&buff[..len], buffer, 254))
+    }
+
+    pub async fn host_uart_write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
+        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
+        let len = host::maxval_encode(buffer, &mut buff, 254);
+        self.uart.write(&buff[..len]).await
     }
 }
 
@@ -155,9 +175,9 @@ pub async fn init() -> ModuleInterface {
     ModuleInterface {
         uart: lpuart1,
         lora,
-        led,
         lora_modulation,
         lora_tx_params,
         lora_rx_params,
+        led,
     }
 }
