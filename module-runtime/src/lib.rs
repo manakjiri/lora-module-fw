@@ -19,6 +19,7 @@ pub use panic_probe;
 
 use defmt::info;
 use embassy_lora::iv::Stm32wlInterfaceVariant;
+use embassy_stm32::crc::{self, Crc};
 use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
 use embassy_stm32::rcc::*;
 use embassy_stm32::spi::Spi;
@@ -69,6 +70,7 @@ pub struct ModuleInterface {
     lora_tx_params: PacketParams,
     lora_rx_params: PacketParams,
 
+    pub crc: crc::Crc<'static>,
     pub led: Output<'static, AnyPin>,
 }
 
@@ -138,12 +140,23 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
 
     let led = Output::new(p.PC13, Level::High, Speed::Low).degrade();
 
+    let crc = Crc::new(
+        p.CRC,
+        // same as https://nicoretti.github.io/crc/api/crc32/
+        match crc::Config::new(crc::InputReverseConfig::Byte, true, 4294967295) {
+            Ok(c) => c,
+            Err(_) => unreachable!("CRC config is invalid"),
+        },
+        //TODO crc::Config::new(crc::InputReverseConfig::None, false, 0).unwrap(),
+    );
+
     ModuleInterface {
         uart: lpuart1,
         lora,
         lora_modulation,
         lora_tx_params,
         lora_rx_params,
+        crc,
         led,
     }
 }
