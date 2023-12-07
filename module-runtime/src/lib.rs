@@ -6,7 +6,6 @@
 pub use cortex_m;
 pub use cortex_m_rt;
 pub use defmt;
-use defmt::info;
 pub use defmt_rtt;
 pub use embassy_embedded_hal;
 pub use embassy_executor;
@@ -15,10 +14,10 @@ pub use embassy_stm32;
 pub use embassy_time;
 pub use embedded_storage;
 pub use futures;
-pub use heapless;
 pub use lora_phy;
 pub use panic_probe;
 
+use defmt::info;
 use embassy_lora::iv::Stm32wlInterfaceVariant;
 use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
 use embassy_stm32::rcc::*;
@@ -41,6 +40,21 @@ bind_interrupts!(struct Irqs{
     SUBGHZ_RADIO => embassy_lora::iv::InterruptHandler;
 });
 
+pub enum ModuleVersion {
+    NucleoWL55JC,
+    Lumia,
+}
+
+pub struct ModuleConfig {
+    pub version: ModuleVersion,
+}
+
+impl ModuleConfig {
+    pub fn new(version: ModuleVersion) -> Self {
+        Self { version }
+    }
+}
+
 pub struct ModuleInterface {
     uart: Uart<'static, peripherals::LPUART1, peripherals::DMA1_CH3, peripherals::DMA1_CH4>,
 
@@ -58,62 +72,14 @@ pub struct ModuleInterface {
     pub led: Output<'static, AnyPin>,
 }
 
-impl ModuleInterface {
-    pub async fn lora_transmit(&mut self, tx_buffer: &[u8]) -> Result<(), RadioError> {
-        self.lora
-            .prepare_for_tx(&self.lora_modulation, 14, false)
-            .await?;
-        self.lora
-            .tx(
-                &self.lora_modulation,
-                &mut self.lora_tx_params,
-                tx_buffer,
-                500,
-            )
-            .await
-    }
-
-    pub async fn lora_receive(&mut self, rx_buffer: &mut [u8]) -> Result<u8, RadioError> {
-        self.lora
-            .prepare_for_rx(
-                &self.lora_modulation,
-                &self.lora_rx_params,
-                None,
-                None,
-                false,
-            )
-            .await?;
-        match self.lora.rx(&self.lora_rx_params, rx_buffer).await {
-            Ok((received_len, status)) => {
-                info!("RX rssi {} len {}", status.rssi, received_len);
-                Ok(received_len)
-            }
-            Err(err) => Err(err),
-        }
-    }
-
-    pub async fn host_uart_read_until_idle(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Result<usize, usart::Error> {
-        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
-        let len = self.uart.read_until_idle(&mut buff).await?;
-        //info!("len {}", len);
-        Ok(host::maxval_decode(&buff[..len], buffer, 254))
-    }
-
-    pub async fn host_uart_write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
-        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
-        let len = host::maxval_encode(buffer, &mut buff, 254);
-        self.uart.write(&buff[..len]).await
-    }
-}
-
-pub async fn init() -> ModuleInterface {
+pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
     let mut config = embassy_stm32::Config::default();
     config.rcc.hse = Some(Hse {
         freq: Hertz(32_000_000),
-        mode: HseMode::Bypass,
+        mode: match module_config.version {
+            ModuleVersion::NucleoWL55JC => HseMode::Bypass,
+            ModuleVersion::Lumia => HseMode::Oscillator,
+        },
         prescaler: HsePrescaler::DIV1,
     });
     config.rcc.mux = ClockSrc::PLL1_R;
@@ -179,5 +145,55 @@ pub async fn init() -> ModuleInterface {
         lora_tx_params,
         lora_rx_params,
         led,
+    }
+}
+
+impl ModuleInterface {
+    pub async fn lora_transmit(&mut self, tx_buffer: &[u8]) -> Result<(), RadioError> {
+        self.lora
+            .prepare_for_tx(&self.lora_modulation, 14, false)
+            .await?;
+        self.lora
+            .tx(
+                &self.lora_modulation,
+                &mut self.lora_tx_params,
+                tx_buffer,
+                500,
+            )
+            .await
+    }
+
+    pub async fn lora_receive(&mut self, rx_buffer: &mut [u8]) -> Result<u8, RadioError> {
+        self.lora
+            .prepare_for_rx(
+                &self.lora_modulation,
+                &self.lora_rx_params,
+                None,
+                None,
+                false,
+            )
+            .await?;
+        match self.lora.rx(&self.lora_rx_params, rx_buffer).await {
+            Ok((received_len, status)) => {
+                info!("RX rssi {} len {}", status.rssi, received_len);
+                Ok(received_len)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    pub async fn host_uart_read_until_idle(
+        &mut self,
+        buffer: &mut [u8],
+    ) -> Result<usize, usart::Error> {
+        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
+        let len = self.uart.read_until_idle(&mut buff).await?;
+        Ok(host::maxval_decode(&buff[..len], buffer, 254))
+    }
+
+    pub async fn host_uart_write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
+        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
+        let len = host::maxval_encode(buffer, &mut buff, 254);
+        self.uart.write(&buff[..len]).await
     }
 }

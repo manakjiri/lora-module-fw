@@ -9,7 +9,7 @@ use module_runtime::*;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let mut module = init().await;
+    let mut module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
 
     let mut rx_buffer = [0u8; 128];
     loop {
