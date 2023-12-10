@@ -23,7 +23,7 @@ async fn lora_message(
     module: &mut ModuleInterface,
     tx_buffer: &[u8],
     rx_buffer: &mut [u8],
-) -> Result<u8, Error> {
+) -> Result<usize, Error> {
     module.lora_transmit(tx_buffer).await.map_err(Error::LoRa)?;
     module.lora_receive(rx_buffer).await.map_err(Error::LoRa)
 }

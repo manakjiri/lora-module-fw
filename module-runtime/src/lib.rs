@@ -14,8 +14,11 @@ pub use embassy_stm32;
 pub use embassy_time;
 pub use embedded_storage;
 pub use futures;
+pub use heapless;
 pub use lora_phy;
 pub use panic_probe;
+pub use postcard;
+pub use serde;
 
 use defmt::info;
 use embassy_lora::iv::Stm32wlInterfaceVariant;
@@ -32,6 +35,7 @@ use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 
 mod host;
+pub mod ota;
 
 const LORA_FREQUENCY_IN_HZ: u32 = 869_525_000; // warning: set this appropriately for the region
 const HOST_UART_BUFFER_SIZE: usize = 256;
@@ -176,7 +180,7 @@ impl ModuleInterface {
             .await
     }
 
-    pub async fn lora_receive(&mut self, rx_buffer: &mut [u8]) -> Result<u8, RadioError> {
+    pub async fn lora_receive(&mut self, rx_buffer: &mut [u8]) -> Result<usize, RadioError> {
         self.lora
             .prepare_for_rx(
                 &self.lora_modulation,
@@ -189,7 +193,7 @@ impl ModuleInterface {
         match self.lora.rx(&self.lora_rx_params, rx_buffer).await {
             Ok((received_len, status)) => {
                 info!("RX rssi {} len {}", status.rssi, received_len);
-                Ok(received_len)
+                Ok(received_len as usize)
             }
             Err(err) => Err(err),
         }
