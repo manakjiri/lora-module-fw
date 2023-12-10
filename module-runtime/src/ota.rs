@@ -1,8 +1,5 @@
-use core::ops::Deref;
 use heapless::Vec;
-use postcard::{from_bytes, to_vec};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 /* sent by the gateway to node */
@@ -16,7 +13,7 @@ pub struct OtaInitPacket {
 /* sent by the gateway to node */
 pub struct OtaDataPacket {
     pub index: u16, // index of this block
-    pub data: Vec<u8, 128>,
+    pub data: Vec<u8, 96>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]

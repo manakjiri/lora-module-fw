@@ -8,6 +8,8 @@ version = "0.1.0"
 [lib]
 crate-type = ["lib"]
 name = "module_runtime"
+test = false
+bench = false
 
 [dependencies]
 cortex-m = { version = "0.7.6", features = ["inline-asm", "critical-section-single-core"] }

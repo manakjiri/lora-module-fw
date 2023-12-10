@@ -5,6 +5,11 @@ readme = "README.md"
 name = "module-gateway"
 version = "0.1.0"
 
+[[bin]]
+name = "module-gateway"
+test = false
+bench = false
+
 [dependencies]
 module-runtime = { path = "../module-runtime" }
 

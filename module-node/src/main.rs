@@ -9,7 +9,7 @@ use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use module_runtime::{futures::TryFutureExt, *};
 use ota::*;
-use serde::{Deserialize, Serialize};
+
 
 #[derive(Debug, defmt::Format, PartialEq)]
 enum Error {

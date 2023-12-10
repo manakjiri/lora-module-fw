@@ -5,6 +5,11 @@ readme = "README.md"
 name = "module-node"
 version = "0.1.0"
 
+[[bin]]
+name = "module-node"
+test = false
+bench = false
+
 [dependencies]
 module-runtime = { path = "../module-runtime" }
 serde = { version = "1.0", default-features = false }
