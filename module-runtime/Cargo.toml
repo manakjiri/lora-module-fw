@@ -35,6 +35,10 @@ git = "https://github.com/embassy-rs/embassy.git"
 rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"
 features = ["nightly", "arch-cortex-m", "executor-thread", "defmt", "integrated-timers"]
 
+[dependencies.embassy-futures]
+git = "https://github.com/embassy-rs/embassy.git"
+rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"
+
 [dependencies.embassy-stm32]
 git = "https://github.com/embassy-rs/embassy.git"
 rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"

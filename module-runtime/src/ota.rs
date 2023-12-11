@@ -1,6 +1,11 @@
 use heapless::Vec;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, defmt::Format, PartialEq)]
+pub enum OtaError {
+    OtaInvalidPacketType,
+}
+
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 /* sent by the gateway to node */
 pub struct OtaInitPacket {

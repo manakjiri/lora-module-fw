@@ -10,12 +10,11 @@ use lora_phy::mod_params::RadioError;
 use module_runtime::{futures::TryFutureExt, *};
 use ota::*;
 
-
 #[derive(Debug, defmt::Format, PartialEq)]
 enum Error {
-    OtaInvalidPacketType,
     LoRa(RadioError),
     SerDe(postcard::Error),
+    Ota(OtaError),
 }
 
 struct OtaConsumer {
@@ -57,7 +56,7 @@ impl OtaConsumer {
         let begin = match &self.params {
             Some(p) => (p.block_size * data.index) as usize,
             None => {
-                return Err(Error::OtaInvalidPacketType);
+                return Err(Error::Ota(OtaError::OtaInvalidPacketType));
             }
         };
         let end = begin + data.data.len();
@@ -89,8 +88,8 @@ impl OtaConsumer {
         match postcard::from_bytes::<OtaPacket>(message).map_err(Error::SerDe)? {
             OtaPacket::Init(init) => self.handle_init(module, init).await,
             OtaPacket::Data(data) => self.handle_data(module, data).await,
-            OtaPacket::InitAck => return Err(Error::OtaInvalidPacketType),
-            OtaPacket::Status(_) => return Err(Error::OtaInvalidPacketType),
+            OtaPacket::InitAck => return Err(Error::Ota(OtaError::OtaInvalidPacketType)),
+            OtaPacket::Status(_) => return Err(Error::Ota(OtaError::OtaInvalidPacketType)),
         }
     }
 }

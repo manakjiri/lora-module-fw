@@ -694,6 +694,7 @@ dependencies = [
  "defmt-rtt",
  "embassy-embedded-hal",
  "embassy-executor",
+ "embassy-futures",
  "embassy-lora",
  "embassy-stm32",
  "embassy-sync",
