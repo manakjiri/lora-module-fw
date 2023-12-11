@@ -9,9 +9,8 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      
       - uses: actions/checkout@v4
-        
+
       - name: Generate dependabot.yml
         uses: Makeshift/generate-dependabot-glob-action@master
 
