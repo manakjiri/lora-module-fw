@@ -42,7 +42,7 @@ rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"
 [dependencies.embassy-stm32]
 git = "https://github.com/embassy-rs/embassy.git"
 rev = "76f3a11f43b9f64d2acfe2ebd747fb2741c73bfc"
-features = ["nightly", "unstable-traits", "defmt", "stm32wl55jc-cm4", "time-driver-any", "memory-x", "unstable-pac", "exti", "chrono"]
+features = ["nightly", "unstable-traits", "defmt", "stm32wle5cc", "time-driver-any", "memory-x", "unstable-pac", "exti", "chrono"]
 
 [dependencies.embassy-sync]
 git = "https://github.com/embassy-rs/embassy.git"
