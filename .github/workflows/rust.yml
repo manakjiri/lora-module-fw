@@ -24,4 +24,4 @@ jobs:
 
       - name: Build
         working-directory: module-${{matrix.module}}
-        run: cargo build --verbose
+        run: cargo build --release
