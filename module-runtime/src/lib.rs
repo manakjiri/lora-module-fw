@@ -62,9 +62,7 @@ impl ModuleConfig {
     }
 }
 
-pub struct ModuleInterface {
-    uart: Uart<'static, peripherals::LPUART1, peripherals::DMA1_CH3, peripherals::DMA1_CH4>,
-
+pub struct ModuleLoRa {
     lora: LoRa<
         SX1261_2<
             Spi<'static, peripherals::SUBGHZSPI, peripherals::DMA1_CH1, peripherals::DMA1_CH2>,
@@ -75,7 +73,15 @@ pub struct ModuleInterface {
     lora_modulation: ModulationParams,
     lora_tx_params: PacketParams,
     lora_rx_params: PacketParams,
+}
 
+pub struct ModuleHost {
+    uart: Uart<'static, peripherals::LPUART1, peripherals::DMA1_CH3, peripherals::DMA1_CH4>,
+}
+
+pub struct ModuleInterface {
+    pub lora: ModuleLoRa,
+    pub host: ModuleHost,
     pub crc: crc::Crc<'static>,
     pub led: Output<'static, AnyPin>,
 }
@@ -157,18 +163,20 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
     );
 
     ModuleInterface {
-        uart: lpuart1,
-        lora,
-        lora_modulation,
-        lora_tx_params,
-        lora_rx_params,
+        host: ModuleHost { uart: lpuart1 },
+        lora: ModuleLoRa {
+            lora,
+            lora_modulation,
+            lora_tx_params,
+            lora_rx_params,
+        },
         crc,
         led,
     }
 }
 
-impl ModuleInterface {
-    pub async fn lora_transmit(&mut self, tx_buffer: &[u8]) -> Result<(), RadioError> {
+impl ModuleLoRa {
+    pub async fn transmit(&mut self, tx_buffer: &[u8]) -> Result<(), RadioError> {
         self.lora
             .prepare_for_tx(&self.lora_modulation, 14, false)
             .await?;
@@ -182,7 +190,7 @@ impl ModuleInterface {
             .await
     }
 
-    pub async fn lora_receive(&mut self, rx_buffer: &mut [u8]) -> Result<usize, RadioError> {
+    pub async fn receive(&mut self, rx_buffer: &mut [u8]) -> Result<usize, RadioError> {
         self.lora
             .prepare_for_rx(
                 &self.lora_modulation,
@@ -200,17 +208,16 @@ impl ModuleInterface {
             Err(err) => Err(err),
         }
     }
+}
 
-    pub async fn host_uart_read_until_idle(
-        &mut self,
-        buffer: &mut [u8],
-    ) -> Result<usize, usart::Error> {
+impl ModuleHost {
+    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, usart::Error> {
         let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
         let len = self.uart.read_until_idle(&mut buff).await?;
         Ok(host::maxval_decode(&buff[..len], buffer, 254))
     }
 
-    pub async fn host_uart_write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
+    pub async fn write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
         let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
         let len = host::maxval_encode(buffer, &mut buff, 254);
         self.uart.write(&buff[..len]).await

@@ -34,23 +34,22 @@ impl OtaConsumer {
 
     async fn handle_init(
         &mut self,
-        module: &mut ModuleInterface,
+        lora: &mut ModuleLoRa,
         init: OtaInitPacket,
     ) -> Result<(), Error> {
         self.params = Some(init);
 
         let mut tx_buffer = [0u8; 128];
-        module
-            .lora_transmit(
-                &postcard::to_slice(&OtaPacket::InitAck, &mut tx_buffer).map_err(Error::SerDe)?,
-            )
-            .map_err(Error::LoRa)
-            .await
+        lora.transmit(
+            &postcard::to_slice(&OtaPacket::InitAck, &mut tx_buffer).map_err(Error::SerDe)?,
+        )
+        .map_err(Error::LoRa)
+        .await
     }
 
     async fn handle_data(
         &mut self,
-        module: &mut ModuleInterface,
+        lora: &mut ModuleLoRa,
         data: OtaDataPacket,
     ) -> Result<(), Error> {
         let begin = match &self.params {
@@ -71,23 +70,22 @@ impl OtaConsumer {
         let packet = OtaStatusPacket {
             received_indexes: self.recent_indexes.iter().cloned().collect(),
         };
-        module
-            .lora_transmit(
-                &postcard::to_slice(&OtaPacket::Status(packet), &mut tx_buffer)
-                    .map_err(Error::SerDe)?,
-            )
-            .map_err(Error::LoRa)
-            .await
+        lora.transmit(
+            &postcard::to_slice(&OtaPacket::Status(packet), &mut tx_buffer)
+                .map_err(Error::SerDe)?,
+        )
+        .map_err(Error::LoRa)
+        .await
     }
 
     async fn process_message(
         &mut self,
-        module: &mut ModuleInterface,
+        lora: &mut ModuleLoRa,
         message: &[u8],
     ) -> Result<(), Error> {
         match postcard::from_bytes::<OtaPacket>(message).map_err(Error::SerDe)? {
-            OtaPacket::Init(init) => self.handle_init(module, init).await,
-            OtaPacket::Data(data) => self.handle_data(module, data).await,
+            OtaPacket::Init(init) => self.handle_init(lora, init).await,
+            OtaPacket::Data(data) => self.handle_data(lora, data).await,
             OtaPacket::InitAck => return Err(Error::Ota(OtaError::OtaInvalidPacketType)),
             OtaPacket::Status(_) => return Err(Error::Ota(OtaError::OtaInvalidPacketType)),
         }
@@ -96,14 +94,16 @@ impl OtaConsumer {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let mut module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
+    let module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
     let mut ota_consumer = OtaConsumer::new();
+
+    let mut lora = module.lora;
 
     let mut rx_buffer = [0u8; 128];
     loop {
-        match module.lora_receive(rx_buffer.as_mut()).await {
+        match lora.receive(rx_buffer.as_mut()).await {
             Ok(len) => match ota_consumer
-                .process_message(&mut module, &rx_buffer[..len])
+                .process_message(&mut lora, &rx_buffer[..len])
                 .await
             {
                 Ok(()) => {}

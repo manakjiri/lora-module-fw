@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, defmt::Format, PartialEq)]
 pub enum OtaError {
     OtaInvalidPacketType,
+    OtaAlreadyStarted,
+    OtaNotStarted,
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
