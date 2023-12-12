@@ -120,6 +120,11 @@ impl Gateway {
                 self.continue_download(host, lora, &uart_buffer[1..])
                     .await?;
             }
+            12 => {
+                if let Some(ota) = self.ota.as_mut().take() {
+                    ota.abort_download(host, lora).await.map_err(Error::Ota)?;
+                }
+            }
             // unhandled
             _ => {
                 return Err(Error::MessageUnknownType);

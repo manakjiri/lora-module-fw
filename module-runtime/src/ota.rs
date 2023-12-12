@@ -74,12 +74,15 @@ pub enum OtaPacket {
     InitAck,
     Data(OtaDataPacket),
     Status(OtaStatusPacket),
+    Abort,
+    AbortAck,
 }
 
 #[derive(Debug, defmt::Format, PartialEq)]
 pub enum OtaProducerState {
     Init,
     Download,
+    Done,
 }
 
 pub struct OtaProducer {
@@ -132,6 +135,7 @@ impl OtaProducer {
         match postcard::from_bytes::<OtaPacket>(buffer).map_err(err_deserialize)? {
             OtaPacket::Init(_) => return Err(OtaError::InvalidPacketType),
             OtaPacket::Data(_) => return Err(OtaError::InvalidPacketType),
+            OtaPacket::Abort => return Err(OtaError::InvalidPacketType),
             OtaPacket::InitAck => {
                 if self.state == OtaProducerState::Init {
                     self.state = OtaProducerState::Download;
@@ -147,6 +151,11 @@ impl OtaProducer {
                 } else {
                     return Err(OtaError::InvalidPacketType);
                 }
+            }
+            OtaPacket::AbortAck => {
+                self.state = OtaProducerState::Done;
+                host.write(&[22u8]).await.map_err(err_host_write)?;
+                Ok(())
             }
         }
     }
@@ -200,6 +209,37 @@ impl OtaProducer {
 
         self.not_acked_indexes.push(current_index).unwrap();
         Ok(())
+    }
+
+    pub async fn abort_download(
+        &mut self,
+        host: &mut ModuleHost,
+        lora: &mut ModuleLoRa,
+    ) -> Result<(), OtaError> {
+        let mut tx_buffer = [0u8; 128];
+        let packet =
+            postcard::to_slice(&OtaPacket::Abort, &mut tx_buffer).map_err(err_serialize)?;
+
+        let mut last_error: Option<OtaError> = None;
+        for _ in 0..10 {
+            let mut rx_buffer = [0u8; 128];
+            lora.transmit(&packet).await.map_err(err_transmit)?;
+            match lora.receive(&mut rx_buffer).await {
+                Ok(len) => match self.process_response(host, lora, &rx_buffer[..len]).await {
+                    Ok(()) => return Ok(()),
+                    Err(e) => {
+                        warn!("abort download error: {}", e);
+                        last_error = Some(e);
+                    }
+                },
+                Err(_e) => {
+                    warn!("abort download error: {}", _e);
+                    last_error = Some(OtaError::Receive);
+                }
+            }
+            Timer::after_millis(100).await;
+        }
+        Err(last_error.unwrap())
     }
 }
 
@@ -266,6 +306,17 @@ impl OtaConsumer {
         .map_err(err_transmit)
     }
 
+    async fn handle_abort(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
+        info!("abort download");
+
+        let mut tx_buffer = [0u8; 128];
+        lora.transmit(
+            &postcard::to_slice(&OtaPacket::AbortAck, &mut tx_buffer).map_err(err_serialize)?,
+        )
+        .await
+        .map_err(err_transmit)
+    }
+
     pub async fn process_message(
         &mut self,
         lora: &mut ModuleLoRa,
@@ -276,6 +327,8 @@ impl OtaConsumer {
             OtaPacket::Data(data) => self.handle_data(lora, data).await,
             OtaPacket::InitAck => return Err(OtaError::InvalidPacketType),
             OtaPacket::Status(_) => return Err(OtaError::InvalidPacketType),
+            OtaPacket::Abort => self.handle_abort(lora).await,
+            OtaPacket::AbortAck => return Err(OtaError::InvalidPacketType),
         }
     }
 }
