@@ -1,12 +1,8 @@
 use defmt::info;
 use embassy_lora::iv::Stm32wlInterfaceVariant;
-use embassy_stm32::crc::{self, Crc};
-use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
-use embassy_stm32::rcc::*;
+use embassy_stm32::gpio::{AnyPin, Output};
+use embassy_stm32::peripherals;
 use embassy_stm32::spi::Spi;
-use embassy_stm32::time::Hertz;
-use embassy_stm32::usart::{self, Uart};
-use embassy_stm32::{bind_interrupts, peripherals};
 use embassy_time::Delay;
 use lora_phy::mod_params::*;
 use lora_phy::sx1261_2::SX1261_2;
