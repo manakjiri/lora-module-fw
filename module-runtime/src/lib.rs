@@ -17,12 +17,14 @@ pub use embassy_time;
 pub use embedded_storage;
 pub use futures;
 pub use heapless;
+pub use host::*;
+pub use lora::*;
 pub use lora_phy;
+pub use ota::*;
 pub use panic_probe;
 pub use postcard;
 pub use serde;
 
-use defmt::info;
 use embassy_lora::iv::Stm32wlInterfaceVariant;
 use embassy_stm32::crc::{self, Crc};
 use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
@@ -37,10 +39,10 @@ use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
 
 mod host;
-pub mod ota;
+mod lora;
+mod ota;
 
 const LORA_FREQUENCY_IN_HZ: u32 = 869_525_000; // warning: set this appropriately for the region
-const HOST_UART_BUFFER_SIZE: usize = 256;
 
 bind_interrupts!(struct Irqs{
     LPUART1 => usart::InterruptHandler<peripherals::LPUART1>;
@@ -60,23 +62,6 @@ impl ModuleConfig {
     pub fn new(version: ModuleVersion) -> Self {
         Self { version }
     }
-}
-
-pub struct ModuleLoRa {
-    lora: LoRa<
-        SX1261_2<
-            Spi<'static, peripherals::SUBGHZSPI, peripherals::DMA1_CH1, peripherals::DMA1_CH2>,
-            Stm32wlInterfaceVariant<Output<'static, AnyPin>>,
-        >,
-        Delay,
-    >,
-    lora_modulation: ModulationParams,
-    lora_tx_params: PacketParams,
-    lora_rx_params: PacketParams,
-}
-
-pub struct ModuleHost {
-    uart: Uart<'static, peripherals::LPUART1, peripherals::DMA1_CH3, peripherals::DMA1_CH4>,
 }
 
 pub struct ModuleInterface {
@@ -172,62 +157,5 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
         },
         crc,
         led,
-    }
-}
-
-impl ModuleLoRa {
-    pub async fn transmit(&mut self, tx_buffer: &[u8]) -> Result<(), RadioError> {
-        self.lora
-            .prepare_for_tx(&self.lora_modulation, 14, false)
-            .await?;
-        self.lora
-            .tx(
-                &self.lora_modulation,
-                &mut self.lora_tx_params,
-                tx_buffer,
-                10_000, // is the timeout broken? https://www.thethingsnetwork.org/airtime-calculator
-            )
-            .await
-    }
-
-    pub async fn receive(&mut self, rx_buffer: &mut [u8]) -> Result<usize, RadioError> {
-        self.lora
-            .prepare_for_rx(
-                &self.lora_modulation,
-                &self.lora_rx_params,
-                None,
-                None,
-                false,
-            )
-            .await?;
-        match self.lora.rx(&self.lora_rx_params, rx_buffer).await {
-            Ok((received_len, status)) => {
-                info!("RX rssi {} len {}", status.rssi, received_len);
-                Ok(received_len as usize)
-            }
-            Err(err) => Err(err),
-        }
-    }
-}
-
-impl ModuleHost {
-    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, usart::Error> {
-        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
-        let len = self.uart.read_until_idle(&mut buff).await?;
-        match host::maxval_decode(&buff[..len], buffer, 254) {
-            Ok(len) => Ok(len),
-            Err(_) => Err(usart::Error::BufferTooLong),
-        }
-    }
-
-    pub async fn write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
-        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
-        let len = match host::maxval_encode(buffer, &mut buff, 254) {
-            Ok(len) => len,
-            Err(_) => {
-                return Err(usart::Error::BufferTooLong);
-            }
-        };
-        self.uart.write(&buff[..len]).await
     }
 }

@@ -8,8 +8,7 @@ use embassy_executor::Spawner;
 use embassy_futures::select::*;
 use embassy_stm32::usart;
 use lora_phy::mod_params::RadioError;
-use module_runtime::{embassy_time::Timer, *};
-use ota::*;
+use module_runtime::*;
 
 #[derive(Debug, defmt::Format, PartialEq)]
 enum Error {
@@ -19,115 +18,6 @@ enum Error {
     LoRa(RadioError),
     SerDe(postcard::Error),
     Ota(OtaError),
-}
-
-async fn lora_message(
-    lora: &mut ModuleLoRa,
-    tx_buffer: &[u8],
-    rx_buffer: &mut [u8],
-) -> Result<usize, Error> {
-    lora.transmit(tx_buffer).await.map_err(Error::LoRa)?;
-    lora.receive(rx_buffer).await.map_err(Error::LoRa)
-}
-
-#[derive(Debug, defmt::Format, PartialEq)]
-enum OtaProducerState {
-    Init,
-    Download,
-}
-
-struct OtaProducer {
-    state: OtaProducerState,
-}
-
-impl OtaProducer {
-    fn new() -> OtaProducer {
-        OtaProducer {
-            state: OtaProducerState::Init,
-        }
-    }
-
-    async fn process_status(
-        &mut self,
-        _host: &mut ModuleHost,
-        _lora: &mut ModuleLoRa,
-        _status: OtaStatusPacket,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-
-    async fn process_response(
-        &mut self,
-        host: &mut ModuleHost,
-        lora: &mut ModuleLoRa,
-        buffer: &[u8],
-    ) -> Result<(), Error> {
-        match postcard::from_bytes::<OtaPacket>(buffer).map_err(Error::SerDe)? {
-            OtaPacket::Init(_) => return Err(Error::Ota(OtaError::OtaInvalidPacketType)),
-            OtaPacket::Data(_) => return Err(Error::Ota(OtaError::OtaInvalidPacketType)),
-            OtaPacket::InitAck => {
-                if self.state == OtaProducerState::Init {
-                    self.state = OtaProducerState::Download;
-                    host.write(&[20u8]).await.map_err(Error::Usart)?;
-                    Ok(())
-                } else {
-                    return Err(Error::Ota(OtaError::OtaInvalidPacketType));
-                }
-            }
-            OtaPacket::Status(status) => {
-                if self.state == OtaProducerState::Download {
-                    self.process_status(host, lora, status).await
-                } else {
-                    return Err(Error::Ota(OtaError::OtaInvalidPacketType));
-                }
-            }
-        }
-    }
-
-    async fn init_download(
-        &mut self,
-        host: &mut ModuleHost,
-        lora: &mut ModuleLoRa,
-        init: OtaInitPacket,
-    ) -> Result<(), Error> {
-        let mut tx_buffer = [0u8; 128];
-        let packet =
-            postcard::to_slice(&OtaPacket::Init(init), &mut tx_buffer).map_err(Error::SerDe)?;
-
-        let mut last_error: Option<Error> = None;
-        for _ in 0..3 {
-            let mut rx_buffer = [0u8; 128];
-            match lora_message(lora, &packet, &mut rx_buffer).await {
-                Ok(len) => match self.process_response(host, lora, &rx_buffer[..len]).await {
-                    Ok(()) => return Ok(()),
-                    Err(e) => {
-                        warn!("init download error: {}", e);
-                        last_error = Some(e);
-                    }
-                },
-                Err(e) => {
-                    warn!("init download error: {}", e);
-                    last_error = Some(e);
-                }
-            }
-            Timer::after_millis(100).await;
-        }
-        Err(last_error.unwrap())
-    }
-
-    async fn continue_download(
-        &mut self,
-        _host: &mut ModuleHost,
-        lora: &mut ModuleLoRa,
-        data: OtaDataPacket,
-    ) -> Result<(), Error> {
-        let mut tx_buffer = [0u8; 128];
-        lora.transmit(
-            postcard::to_slice(&OtaPacket::Data(data), &mut tx_buffer).map_err(Error::SerDe)?,
-        )
-        .await
-        .map_err(Error::LoRa)
-    }
 }
 
 struct Gateway {
@@ -147,7 +37,7 @@ impl Gateway {
     ) -> Result<(), Error> {
         match self.ota {
             Some(_) => {
-                return Err(Error::Ota(OtaError::OtaAlreadyStarted));
+                return Err(Error::Ota(OtaError::AlreadyStarted));
             }
             None => {
                 let mut ota = OtaProducer::new();
@@ -162,7 +52,8 @@ impl Gateway {
                         binary_sha256: sha,
                     },
                 )
-                .await?;
+                .await
+                .map_err(Error::Ota)?;
                 self.ota = Some(ota);
             }
         }
@@ -185,10 +76,11 @@ impl Gateway {
                         data: uart_buffer[4..].iter().cloned().collect(),
                     },
                 )
-                .await?;
+                .await
+                .map_err(Error::Ota)?;
             }
             None => {
-                return Err(Error::Ota(OtaError::OtaNotStarted));
+                return Err(Error::Ota(OtaError::NotStarted));
             }
         }
         Ok(())
@@ -212,7 +104,9 @@ impl Gateway {
             1 => {
                 if uart_buffer.len() > 1 {
                     let mut rx = [0u8; 128];
-                    lora_message(lora, &uart_buffer[1..], &mut rx[1..]).await?;
+                    lora.message(&uart_buffer[1..], &mut rx[1..])
+                        .await
+                        .map_err(Error::LoRa)?;
                     rx[0] = 1;
                     host.write(uart_buffer).await.map_err(Error::Usart)?;
                 }
