@@ -43,7 +43,7 @@ fn err_receive(_: RadioError) -> OtaError {
     OtaError::Receive
 }
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 /* sent by the gateway to node */
 pub struct OtaInitPacket {
     pub binary_size: u32,
@@ -86,19 +86,26 @@ pub enum OtaProducerState {
 }
 
 pub struct OtaProducer {
-    pub state: OtaProducerState,
-
+    params: OtaInitPacket,
+    state: OtaProducerState,
     data_cache: Vec<OtaDataPacket, 8>,
     not_acked_indexes: Vec<u16, 128>,
+    highest_sent_index: u16,
 }
 
 impl OtaProducer {
-    pub fn new() -> OtaProducer {
+    pub fn new(params: OtaInitPacket) -> OtaProducer {
         OtaProducer {
+            params,
             state: OtaProducerState::Init,
             data_cache: Vec::new(),
             not_acked_indexes: Vec::new(),
+            highest_sent_index: 0,
         }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.state == OtaProducerState::Done
     }
 
     async fn process_status(
@@ -123,6 +130,15 @@ impl OtaProducer {
         host.write(&tx_buffer[..1 + self.not_acked_indexes.len()])
             .await
             .map_err(err_host_write)?;
+
+        // all blocks are acked and the last block has been already sent (thus also acked)
+        if self.not_acked_indexes.is_empty()
+            && self.highest_sent_index as u32
+                == (self.params.binary_size / (self.params.block_size as u32))
+        {
+            self.state = OtaProducerState::Done;
+            info!("ota producer done")
+        }
         Ok(())
     }
 
@@ -146,7 +162,7 @@ impl OtaProducer {
                 }
             }
             OtaPacket::Status(status) => {
-                if self.state == OtaProducerState::Download {
+                if self.state != OtaProducerState::Init {
                     self.process_status(host, lora, status).await
                 } else {
                     return Err(OtaError::InvalidPacketType);
@@ -164,11 +180,10 @@ impl OtaProducer {
         &mut self,
         host: &mut ModuleHost,
         lora: &mut ModuleLoRa,
-        init: OtaInitPacket,
     ) -> Result<(), OtaError> {
         let mut tx_buffer = [0u8; 128];
-        let packet =
-            postcard::to_slice(&OtaPacket::Init(init), &mut tx_buffer).map_err(err_serialize)?;
+        let packet = postcard::to_slice(&OtaPacket::Init(self.params.clone()), &mut tx_buffer)
+            .map_err(err_serialize)?;
 
         let mut last_error: Option<OtaError> = None;
         for _ in 0..3 {
@@ -208,6 +223,9 @@ impl OtaProducer {
         .map_err(err_transmit)?;
 
         self.not_acked_indexes.push(current_index).unwrap();
+        if current_index > self.highest_sent_index {
+            self.highest_sent_index = current_index;
+        }
         Ok(())
     }
 
@@ -220,6 +238,7 @@ impl OtaProducer {
         let packet =
             postcard::to_slice(&OtaPacket::Abort, &mut tx_buffer).map_err(err_serialize)?;
 
+        //TODO move to a function
         let mut last_error: Option<OtaError> = None;
         for _ in 0..10 {
             let mut rx_buffer = [0u8; 128];

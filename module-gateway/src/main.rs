@@ -8,7 +8,7 @@ use embassy_executor::Spawner;
 use embassy_futures::select::*;
 use embassy_stm32::usart;
 use lora_phy::mod_params::RadioError;
-use module_runtime::{heapless::pool::Init, *};
+use module_runtime::*;
 
 #[derive(Debug, defmt::Format, PartialEq)]
 enum Error {
@@ -35,28 +35,15 @@ impl Gateway {
         lora: &mut ModuleLoRa,
         uart_buffer: &[u8],
     ) -> Result<(), Error> {
-        match self.ota {
-            Some(_) => {
-                return Err(Error::Ota(OtaError::AlreadyStarted));
-            }
-            None => {
-                let mut ota = OtaProducer::new();
-                let mut sha = [0u8; 32];
-                sha.copy_from_slice(&uart_buffer[6..38]);
-                ota.init_download(
-                    host,
-                    lora,
-                    OtaInitPacket {
-                        binary_size: u32::from_le_bytes(uart_buffer[0..4].try_into().unwrap()),
-                        block_size: u16::from_le_bytes(uart_buffer[4..6].try_into().unwrap()),
-                        binary_sha256: sha,
-                    },
-                )
-                .await
-                .map_err(Error::Ota)?;
-                self.ota = Some(ota);
-            }
-        }
+        let mut sha = [0u8; 32];
+        sha.copy_from_slice(&uart_buffer[6..38]);
+        let mut ota = OtaProducer::new(OtaInitPacket {
+            binary_size: u32::from_le_bytes(uart_buffer[0..4].try_into().unwrap()),
+            block_size: u16::from_le_bytes(uart_buffer[4..6].try_into().unwrap()),
+            binary_sha256: sha,
+        });
+        ota.init_download(host, lora).await.map_err(Error::Ota)?;
+        self.ota = Some(ota);
         Ok(())
     }
 
@@ -113,7 +100,18 @@ impl Gateway {
             }
             10 => {
                 info!("init download");
-                self.init_download(host, lora, &uart_buffer[1..]).await?;
+                match self.ota.as_mut() {
+                    Some(ota) => {
+                        if ota.is_done() {
+                            self.init_download(host, lora, &uart_buffer[1..]).await?;
+                        } else {
+                            return Err(Error::Ota(OtaError::AlreadyStarted));
+                        }
+                    }
+                    None => {
+                        self.init_download(host, lora, &uart_buffer[1..]).await?;
+                    }
+                }
             }
             11 => {
                 info!("continue download");
