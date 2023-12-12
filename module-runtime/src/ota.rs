@@ -84,21 +84,42 @@ pub enum OtaProducerState {
 
 pub struct OtaProducer {
     pub state: OtaProducerState,
+
+    data_cache: Vec<OtaDataPacket, 8>,
+    not_acked_indexes: Vec<u16, 128>,
 }
 
 impl OtaProducer {
     pub fn new() -> OtaProducer {
         OtaProducer {
             state: OtaProducerState::Init,
+            data_cache: Vec::new(),
+            not_acked_indexes: Vec::new(),
         }
     }
 
     async fn process_status(
         &mut self,
-        _host: &mut ModuleHost,
+        host: &mut ModuleHost,
         _lora: &mut ModuleLoRa,
-        _status: OtaStatusPacket,
+        status: OtaStatusPacket,
     ) -> Result<(), OtaError> {
+        // remove all acknowledged indexes from the internal registry
+        for received in status.received_indexes {
+            self.not_acked_indexes
+                .iter()
+                .position(|i| *i == received)
+                .map(|i| self.not_acked_indexes.swap_remove(i));
+        }
+        //TODO proper handling, now just transmit not acked to host to deal with it
+        let mut tx_buffer = [0u8; 128];
+        tx_buffer[0] = 21;
+        for i in 0..self.not_acked_indexes.len() {
+            tx_buffer[i + 1] = self.not_acked_indexes[i] as u8;
+        }
+        host.write(&tx_buffer[..1 + self.not_acked_indexes.len()])
+            .await
+            .map_err(err_host_write)?;
         Ok(())
     }
 
@@ -169,11 +190,16 @@ impl OtaProducer {
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
         let mut tx_buffer = [0u8; 128];
+        let current_index = data.index;
+
         lora.transmit(
             postcard::to_slice(&OtaPacket::Data(data), &mut tx_buffer).map_err(err_serialize)?,
         )
         .await
-        .map_err(err_transmit)
+        .map_err(err_transmit)?;
+
+        self.not_acked_indexes.push(current_index).unwrap();
+        Ok(())
     }
 }
 

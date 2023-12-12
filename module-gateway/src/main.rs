@@ -8,7 +8,7 @@ use embassy_executor::Spawner;
 use embassy_futures::select::*;
 use embassy_stm32::usart;
 use lora_phy::mod_params::RadioError;
-use module_runtime::*;
+use module_runtime::{heapless::pool::Init, *};
 
 #[derive(Debug, defmt::Format, PartialEq)]
 enum Error {
@@ -130,12 +130,15 @@ impl Gateway {
 
     async fn process_peer_message(
         &mut self,
-        _host: &mut ModuleHost,
-        _lora: &mut ModuleLoRa,
-        _lora_buffer: &[u8],
+        host: &mut ModuleHost,
+        lora: &mut ModuleLoRa,
+        lora_buffer: &[u8],
     ) -> Result<(), Error> {
         match self.ota.as_mut() {
-            Some(_ota) => {}
+            Some(ota) => ota
+                .process_response(host, lora, lora_buffer)
+                .await
+                .map_err(Error::Ota)?,
             None => {}
         }
         Ok(())
