@@ -37,6 +37,7 @@ impl OtaConsumer {
         lora: &mut ModuleLoRa,
         init: OtaInitPacket,
     ) -> Result<(), Error> {
+        info!("init download");
         self.params = Some(init);
 
         let mut tx_buffer = [0u8; 128];
@@ -52,6 +53,7 @@ impl OtaConsumer {
         lora: &mut ModuleLoRa,
         data: OtaDataPacket,
     ) -> Result<(), Error> {
+        info!("continue download");
         let begin = match &self.params {
             Some(p) => (p.block_size * data.index) as usize,
             None => {
@@ -96,6 +98,7 @@ impl OtaConsumer {
 async fn main(_spawner: Spawner) {
     let module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
     let mut ota_consumer = OtaConsumer::new();
+    info!("hello from node");
 
     let mut lora = module.lora;
 

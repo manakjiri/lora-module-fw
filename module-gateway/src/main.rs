@@ -47,7 +47,7 @@ impl OtaProducer {
         }
     }
 
-    fn process_status(
+    async fn process_status(
         &mut self,
         _host: &mut ModuleHost,
         _lora: &mut ModuleLoRa,
@@ -56,7 +56,7 @@ impl OtaProducer {
         Ok(())
     }
 
-    fn process_response(
+    async fn process_response(
         &mut self,
         host: &mut ModuleHost,
         lora: &mut ModuleLoRa,
@@ -68,6 +68,7 @@ impl OtaProducer {
             OtaPacket::InitAck => {
                 if self.state == OtaProducerState::Init {
                     self.state = OtaProducerState::Download;
+                    host.write(&[20u8]).await.map_err(Error::Usart)?;
                     Ok(())
                 } else {
                     return Err(Error::Ota(OtaError::OtaInvalidPacketType));
@@ -75,7 +76,7 @@ impl OtaProducer {
             }
             OtaPacket::Status(status) => {
                 if self.state == OtaProducerState::Download {
-                    self.process_status(host, lora, status)
+                    self.process_status(host, lora, status).await
                 } else {
                     return Err(Error::Ota(OtaError::OtaInvalidPacketType));
                 }
@@ -94,16 +95,18 @@ impl OtaProducer {
             postcard::to_slice(&OtaPacket::Init(init), &mut tx_buffer).map_err(Error::SerDe)?;
 
         let mut last_error: Option<Error> = None;
-        for _ in 0..5 {
+        for _ in 0..3 {
             let mut rx_buffer = [0u8; 128];
             match lora_message(lora, &packet, &mut rx_buffer).await {
-                Ok(len) => match self.process_response(host, lora, &rx_buffer[..len]) {
+                Ok(len) => match self.process_response(host, lora, &rx_buffer[..len]).await {
                     Ok(()) => return Ok(()),
                     Err(e) => {
+                        warn!("init download error: {}", e);
                         last_error = Some(e);
                     }
                 },
                 Err(e) => {
+                    warn!("init download error: {}", e);
                     last_error = Some(e);
                 }
             }
@@ -154,8 +157,8 @@ impl Gateway {
                     host,
                     lora,
                     OtaInitPacket {
-                        binary_size: u32::from_be_bytes(uart_buffer[0..4].try_into().unwrap()),
-                        block_size: u16::from_be_bytes(uart_buffer[4..6].try_into().unwrap()),
+                        binary_size: u32::from_le_bytes(uart_buffer[0..4].try_into().unwrap()),
+                        block_size: u16::from_le_bytes(uart_buffer[4..6].try_into().unwrap()),
                         binary_sha256: sha,
                     },
                 )
@@ -178,7 +181,7 @@ impl Gateway {
                     host,
                     lora,
                     OtaDataPacket {
-                        index: u16::from_be_bytes(uart_buffer[0..4].try_into().unwrap()),
+                        index: u16::from_le_bytes(uart_buffer[0..2].try_into().unwrap()),
                         data: uart_buffer[4..].iter().cloned().collect(),
                     },
                 )
@@ -215,9 +218,11 @@ impl Gateway {
                 }
             }
             10 => {
+                info!("init download");
                 self.init_download(host, lora, &uart_buffer[1..]).await?;
             }
             11 => {
+                info!("continue download");
                 self.continue_download(host, lora, &uart_buffer[1..])
                     .await?;
             }
@@ -247,6 +252,7 @@ impl Gateway {
 async fn main(_spawner: Spawner) {
     let module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
     let mut gateway = Gateway::new();
+    info!("hello from gateway");
 
     let mut host = module.host;
     let mut lora = module.lora;

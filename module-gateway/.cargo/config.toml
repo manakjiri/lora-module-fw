@@ -6,7 +6,7 @@ runner = "probe-rs run --chip STM32WLE5JCIx"
 target = "thumbv7em-none-eabi"
 
 [env]
-DEFMT_LOG = "trace"
+DEFMT_LOG = "info"
 
 # need to rebuild core because of nightly and alloc additionally because of the target 
 # https://stackoverflow.com/a/72654343

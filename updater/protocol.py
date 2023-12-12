@@ -21,7 +21,9 @@ class Interface:
     def get_received(self, timeout=0.0) -> bytearray | None:
         try:
             if not self.rx_queue.empty() or timeout:
-                return self.rx_queue.get(timeout=timeout)
+                ret = self.rx_queue.get(timeout=timeout)
+                print(ctime(), "RX:", ret.hex(" "))
+                return ret
         except Empty:
             return None
 
@@ -110,6 +112,7 @@ class Usb(Interface):
         super().__init__(Serial(port, **kwargs), UsbReaderProtocol)
 
     def transmit(self, p: bytearray):
+        print(ctime(), "TX:", p.hex(" "))
         encoded = maxval_encode(p, 254)
         encoded.append(255)  # stopval
         # print(ctime(), "TX:", encoded.hex(" "))

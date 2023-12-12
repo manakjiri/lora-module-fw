@@ -122,9 +122,9 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
 
     let lora_modulation = lora
         .create_modulation_params(
-            SpreadingFactor::_10,
+            SpreadingFactor::_5,
             Bandwidth::_250KHz,
-            CodingRate::_4_8,
+            CodingRate::_4_7,
             LORA_FREQUENCY_IN_HZ,
         )
         .unwrap();
@@ -185,7 +185,7 @@ impl ModuleLoRa {
                 &self.lora_modulation,
                 &mut self.lora_tx_params,
                 tx_buffer,
-                500,
+                10_000, // is the timeout broken? https://www.thethingsnetwork.org/airtime-calculator
             )
             .await
     }
@@ -214,12 +214,20 @@ impl ModuleHost {
     pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, usart::Error> {
         let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
         let len = self.uart.read_until_idle(&mut buff).await?;
-        Ok(host::maxval_decode(&buff[..len], buffer, 254))
+        match host::maxval_decode(&buff[..len], buffer, 254) {
+            Ok(len) => Ok(len),
+            Err(_) => Err(usart::Error::BufferTooLong),
+        }
     }
 
     pub async fn write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
         let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
-        let len = host::maxval_encode(buffer, &mut buff, 254);
+        let len = match host::maxval_encode(buffer, &mut buff, 254) {
+            Ok(len) => len,
+            Err(_) => {
+                return Err(usart::Error::BufferTooLong);
+            }
+        };
         self.uart.write(&buff[..len]).await
     }
 }
