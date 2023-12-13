@@ -166,11 +166,16 @@ pub enum LedCommand {
     FlashShort,
 }
 
-pub static STATUS_LED: Channel<ThreadModeRawMutex, LedCommand, 1> = Channel::new();
+static STATUS_LED: Channel<ThreadModeRawMutex, LedCommand, 1> = Channel::new();
+
+pub async fn status_led(cmd: LedCommand) {
+    STATUS_LED.send(cmd).await;
+}
 
 #[embassy_executor::task]
 pub async fn status_led_task(mut led: Output<'static, AnyPin>) {
     //let mut led = Output::new(pin, Level::Low, Speed::Low);
+    led.set_low();
     loop {
         match STATUS_LED.receive().await {
             LedCommand::FlashShort => {

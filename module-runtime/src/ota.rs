@@ -115,6 +115,7 @@ impl OtaProducer {
         status: OtaStatusPacket,
     ) -> Result<(), OtaError> {
         // remove all acknowledged indexes from the internal registry
+        //info! {"ACK {}", status.received_indexes};
         for received in status.received_indexes {
             self.not_acked_indexes
                 .iter()
@@ -126,6 +127,7 @@ impl OtaProducer {
         tx_buffer[0] = 21;
         for i in 0..self.not_acked_indexes.len() {
             tx_buffer[i + 1] = self.not_acked_indexes[i] as u8;
+            warn!("not ACKed {}", self.not_acked_indexes[i]);
         }
         host.write(&tx_buffer[..1 + self.not_acked_indexes.len()])
             .await
@@ -298,7 +300,7 @@ impl OtaConsumer {
         lora: &mut ModuleLoRa,
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
-        info!("continue download");
+        //info!("continue download");
         let begin = match &self.params {
             Some(p) => (p.block_size * data.index) as usize,
             None => {

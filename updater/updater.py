@@ -1,21 +1,32 @@
-
 from updater.protocol import Usb
 from pathlib import Path
 import argparse
 from hashlib import sha256
+import time
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Update firmware')
-    parser.add_argument('firmware', type=str, help='path to firmware binary')
+def init_packet(binary: bytes, block_size=32) -> bytes:
+    binary_size = len(binary)
+    binary_sha = sha256(binary).digest()
+    packet = bytearray([10])
+    packet.extend(binary_size.to_bytes(4, "little"))
+    packet.extend(block_size.to_bytes(2, "little"))
+    packet.extend(binary_sha)
+    return bytes(packet)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Update firmware")
+    parser.add_argument("firmware", type=str, help="path to firmware binary")
 
     args = parser.parse_args()
-
     firmware_binary = Path(args.firmware).read_bytes()
-    
     baudrate = 115200
+    block_size = 32
+    binary_size = len(firmware_binary)
+
     device_path = None
-    for path in Path('/dev/').glob('ttyACM*'):
+    for path in Path("/dev/").glob("ttyACM*"):
         try:
             gateway = Usb(str(path), baudrate=baudrate)
             data = bytearray([0, 1, 2, 255, 255, 5, 1])
@@ -27,36 +38,56 @@ if __name__ == '__main__':
         except:
             pass
     else:
-        raise RuntimeError('No gateway found')
-
+        raise RuntimeError("No gateway found")
 
     gateway = Usb(device_path, baudrate=baudrate)
     assert gateway.is_open()
 
-    block_size = 32
-    binary_size = len(firmware_binary)
-    binary_sha = sha256(firmware_binary).digest()
+    print("binary size:", len(firmware_binary), "B")
+    print("block size:", block_size, "B")
 
-    print('binary size:', binary_size, 'B')
-    print('block size:', block_size, 'B')
+    gateway.transmit(init_packet(firmware_binary, block_size))
+    resp = gateway.get_received(timeout=1)
+    if resp is None:
+        print("cancelling ongoing update")
+        gateway.transmit(bytearray([12]))
 
-    packet = bytearray([10])
-    packet.extend(binary_size.to_bytes(4, 'little'))
-    packet.extend(block_size.to_bytes(2, 'little'))
-    packet.extend(binary_sha)
-    gateway.transmit(packet)
-    print(gateway.get_received(timeout=1))
+        resp = gateway.get_received(timeout=1)
+        if resp is None:
+            raise RuntimeError("No response from gateway")
 
-    for i in range(0, binary_size, block_size):
+        # retry
+        time.sleep(0.5)
+        gateway.transmit(init_packet(firmware_binary, block_size))
+        resp = gateway.get_received(timeout=1)
+        if resp is None:
+            raise RuntimeError("No response from gateway")
+
+    time.sleep(0.5)
+
+    # add all indexes initially
+    indexes = [i for i in range(0, binary_size, block_size)]
+
+    for i in indexes:
+        print("transmitting block:", i // block_size, "of", binary_size // block_size)
         packet = bytearray([11])
-        packet.extend((i // block_size).to_bytes(2, 'little')) # index
+        packet.extend((i // block_size).to_bytes(2, "little"))  # index
         end = i + block_size if i + block_size < binary_size else binary_size
         packet.extend(firmware_binary[i:end])
         gateway.transmit(packet)
-        print(gateway.get_received(timeout=1))
+        resp = gateway.get_received(timeout=1)
+        if resp and len(resp) > 1:
+            for index in resp[1:]:
+                print("failed block:", index, "retrying")
+                indexes.append(index * block_size)
 
-    #gateway.transmit(bytearray([0, 1, 2, 255, 255, 5, 1, 2, 3, 254, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5]))
-    #print(gateway.get_received(timeout=1))
+        time.sleep(0.5)
+
+    # gateway.transmit(bytearray([0, 1, 2, 255, 255, 5, 1, 2, 3, 254, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5]))
+    # print(gateway.get_received(timeout=1))
 
     gateway.close()
 
+
+if __name__ == "__main__":
+    main()

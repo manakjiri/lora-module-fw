@@ -114,7 +114,7 @@ impl Gateway {
                 }
             }
             11 => {
-                info!("continue download");
+                //info!("continue download");
                 self.continue_download(host, lora, &uart_buffer[1..])
                     .await?;
             }
@@ -155,7 +155,6 @@ async fn main(_spawner: Spawner) {
     info!("hello from gateway");
 
     _spawner.spawn(status_led_task(module.led)).unwrap();
-
     let mut host = module.host;
     let mut lora = module.lora;
 
@@ -198,6 +197,6 @@ async fn main(_spawner: Spawner) {
                 }
             },
         }
-        STATUS_LED.send(LedCommand::FlashShort).await;
+        status_led(LedCommand::FlashShort).await;
     }
 }

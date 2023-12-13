@@ -13,6 +13,7 @@ async fn main(_spawner: Spawner) {
     let mut ota_consumer = OtaConsumer::new();
     info!("hello from node");
 
+    _spawner.spawn(status_led_task(module.led)).unwrap();
     let mut lora = module.lora;
 
     let mut rx_buffer = [0u8; 128];
@@ -31,5 +32,6 @@ async fn main(_spawner: Spawner) {
                 error!("lora error: {}", e)
             }
         }
+        status_led(LedCommand::FlashShort).await;
     }
 }

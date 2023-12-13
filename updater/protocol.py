@@ -6,6 +6,7 @@ from time import ctime, time
 from contextlib import contextmanager
 from typing import Type
 
+
 class Interface:
     def __init__(self, serial_port, protocol_reader) -> None:
         self.rx_queue = Queue()
@@ -22,7 +23,7 @@ class Interface:
         try:
             if not self.rx_queue.empty() or timeout:
                 ret = self.rx_queue.get(timeout=timeout)
-                print(ctime(), "RX:", ret.hex(" "))
+                # print(ctime(), "RX:", ret.hex(" "))
                 return ret
         except Empty:
             return None
@@ -101,7 +102,7 @@ class UsbReaderProtocol(Protocol):
                     self.callback(data)
 
                 self.rx_buffer = self.rx_buffer[i + 1 :]
-        
+
         except Exception as e:
             # print(e)
             pass
@@ -112,12 +113,11 @@ class Usb(Interface):
         super().__init__(Serial(port, **kwargs), UsbReaderProtocol)
 
     def transmit(self, p: bytearray):
-        print(ctime(), "TX:", p.hex(" "))
+        # print(ctime(), "TX:", p.hex(" "))
         encoded = maxval_encode(p, 254)
         encoded.append(255)  # stopval
         # print(ctime(), "TX:", encoded.hex(" "))
         self.reader.write(encoded)
-
 
 
 if __name__ == "__main__":
