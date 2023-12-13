@@ -33,7 +33,9 @@ use embassy_stm32::spi::Spi;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::usart::{self, Uart};
 use embassy_stm32::{bind_interrupts, peripherals};
-use embassy_time::Delay;
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::channel::Channel;
+use embassy_time::{Delay, Timer};
 use lora_phy::mod_params::*;
 use lora_phy::sx1261_2::SX1261_2;
 use lora_phy::LoRa;
@@ -135,7 +137,7 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
     )
     .unwrap();
 
-    let led = Output::new(p.PC13, Level::High, Speed::Low).degrade();
+    let led = Output::new(p.PB15 /* p.PC13 */, Level::High, Speed::Low).degrade();
 
     let crc = Crc::new(
         p.CRC,
@@ -157,5 +159,25 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
         },
         crc,
         led,
+    }
+}
+
+pub enum LedCommand {
+    FlashShort,
+}
+
+pub static STATUS_LED: Channel<ThreadModeRawMutex, LedCommand, 1> = Channel::new();
+
+#[embassy_executor::task]
+pub async fn status_led_task(mut led: Output<'static, AnyPin>) {
+    //let mut led = Output::new(pin, Level::Low, Speed::Low);
+    loop {
+        match STATUS_LED.receive().await {
+            LedCommand::FlashShort => {
+                led.set_high();
+                Timer::after_millis(100).await;
+                led.set_low();
+            }
+        }
     }
 }

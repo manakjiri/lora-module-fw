@@ -154,6 +154,8 @@ async fn main(_spawner: Spawner) {
     let mut gateway = Gateway::new();
     info!("hello from gateway");
 
+    _spawner.spawn(status_led_task(module.led)).unwrap();
+
     let mut host = module.host;
     let mut lora = module.lora;
 
@@ -196,5 +198,6 @@ async fn main(_spawner: Spawner) {
                 }
             },
         }
+        STATUS_LED.send(LedCommand::FlashShort).await;
     }
 }
