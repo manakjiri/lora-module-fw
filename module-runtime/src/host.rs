@@ -1,9 +1,39 @@
+use embassy_stm32::peripherals;
+use embassy_stm32::usart::{self, Uart};
+
+const HOST_UART_BUFFER_SIZE: usize = 256;
 pub enum HostError {
     NoData,
     DataTooLong,
 }
 
-pub fn maxval_encode(data_in: &[u8], data_out: &mut [u8], max_val: u8) -> Result<usize, HostError> {
+pub struct ModuleHost {
+    pub uart: Uart<'static, peripherals::LPUART1, peripherals::DMA1_CH3, peripherals::DMA1_CH4>,
+}
+
+impl ModuleHost {
+    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, usart::Error> {
+        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
+        let len = self.uart.read_until_idle(&mut buff).await?;
+        match maxval_decode(&buff[..len], buffer, 254) {
+            Ok(len) => Ok(len),
+            Err(_) => Err(usart::Error::BufferTooLong),
+        }
+    }
+
+    pub async fn write(&mut self, buffer: &[u8]) -> Result<(), usart::Error> {
+        let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
+        let len = match maxval_encode(buffer, &mut buff, 254) {
+            Ok(len) => len,
+            Err(_) => {
+                return Err(usart::Error::BufferTooLong);
+            }
+        };
+        self.uart.write(&buff[..len]).await
+    }
+}
+
+fn maxval_encode(data_in: &[u8], data_out: &mut [u8], max_val: u8) -> Result<usize, HostError> {
     if data_in.len() == 0 {
         return Err(HostError::NoData);
     }
@@ -31,7 +61,7 @@ pub fn maxval_encode(data_in: &[u8], data_out: &mut [u8], max_val: u8) -> Result
     Ok(j as usize)
 }
 
-pub fn maxval_decode(data_in: &[u8], data_out: &mut [u8], max_val: u8) -> Result<usize, HostError> {
+fn maxval_decode(data_in: &[u8], data_out: &mut [u8], max_val: u8) -> Result<usize, HostError> {
     if data_in.len() == 0 {
         return Err(HostError::NoData);
     }
