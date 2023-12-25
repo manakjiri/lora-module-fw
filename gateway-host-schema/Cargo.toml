@@ -1,0 +1,14 @@
+[package]
+name = "gateway-host-schema"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib"]
+name = "gateway_host_schema"
+test = false
+bench = false
+
+[dependencies]
+serde = { version = "1.0", default-features = false }
+heapless = { version = "0.7.1", default-features = false }

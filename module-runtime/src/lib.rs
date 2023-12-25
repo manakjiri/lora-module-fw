@@ -16,6 +16,7 @@ pub use embassy_sync;
 pub use embassy_time;
 pub use embedded_storage;
 pub use futures;
+pub use gateway_host_schema;
 pub use heapless;
 pub use host::*;
 pub use lora::*;
