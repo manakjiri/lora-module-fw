@@ -12,3 +12,4 @@ bench = false
 [dependencies]
 serde = { version = "1.0", default-features = false }
 heapless = { version = "0.7.1", default-features = false }
+postcard = { version = "1.0.8", default-features = false, features = ["heapless", "use-defmt"]}
