@@ -1,7 +1,10 @@
+use defmt::{error, info};
 use embassy_stm32::peripherals;
 use embassy_stm32::usart::{self, Uart};
 
-const HOST_UART_BUFFER_SIZE: usize = 256;
+const HOST_UART_BUFFER_SIZE: usize = 512;
+
+#[derive(Debug, defmt::Format)]
 pub enum HostError {
     NoData,
     DataTooLong,
@@ -15,9 +18,13 @@ impl ModuleHost {
     pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, usart::Error> {
         let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
         let len = self.uart.read_until_idle(&mut buff).await?;
+        info!("RX {}: {:?}", len, &buff[..len]);
         match maxval_decode(&buff[..len], buffer, 254) {
             Ok(len) => Ok(len),
-            Err(_) => Err(usart::Error::BufferTooLong),
+            Err(e) => {
+                error!("uart decode: {:?}", e);
+                Err(usart::Error::BufferTooLong)
+            }
         }
     }
 
@@ -25,10 +32,12 @@ impl ModuleHost {
         let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
         let len = match maxval_encode(buffer, &mut buff, 254) {
             Ok(len) => len,
-            Err(_) => {
+            Err(e) => {
+                error!("uart decode: {:?}", e);
                 return Err(usart::Error::BufferTooLong);
             }
         };
+        info!("TX {}: {:?}", len, &buff[..len]);
         self.uart.write(&buff[..len]).await
     }
 }

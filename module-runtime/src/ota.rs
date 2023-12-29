@@ -98,6 +98,13 @@ impl OtaProducer {
         self.state == OtaProducerState::Done
     }
 
+    pub fn get_status(&self) -> OtaStatus {
+        OtaStatus {
+            not_acked: self.not_acked_indexes.iter().cloned().collect(),
+            in_progress: self.state == OtaProducerState::Download,
+        }
+    }
+
     async fn process_status(
         &mut self,
         _lora: &mut ModuleLoRa,
@@ -129,9 +136,7 @@ impl OtaProducer {
             Ok(GatewayPacket::OtaDone)
             //TODO transmit done to the node
         } else {
-            Ok(GatewayPacket::OtaStatus(OtaStatus {
-                not_acked: self.not_acked_indexes.iter().cloned().collect(),
-            }))
+            Ok(GatewayPacket::OtaStatus(self.get_status()))
         }
     }
 
@@ -149,14 +154,14 @@ impl OtaProducer {
                     self.state = OtaProducerState::Download;
                     Ok(GatewayPacket::OtaInitAck)
                 } else {
-                    return Err(OtaError::InvalidPacketType);
+                    Err(OtaError::InvalidPacketType)
                 }
             }
             OtaPacket::Status(status) => {
                 if self.state != OtaProducerState::Init {
                     self.process_status(lora, status).await
                 } else {
-                    return Err(OtaError::InvalidPacketType);
+                    Err(OtaError::InvalidPacketType)
                 }
             }
             OtaPacket::AbortAck => {

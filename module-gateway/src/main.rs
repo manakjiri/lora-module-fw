@@ -8,15 +8,13 @@ use embassy_executor::Spawner;
 use embassy_futures::select::*;
 use embassy_stm32::usart;
 use gateway_host_schema::{self, HostPacket};
-use lora_phy::mod_params::RadioError;
-use module_runtime::*;
+//use lora_phy::mod_params::RadioError;
+use module_runtime::{gateway_host_schema::GatewayPacket, heapless::Vec, *};
 
 #[derive(Debug, defmt::Format, PartialEq)]
 enum Error {
-    MessageTooShort,
-    MessageUnknownType,
     Usart(usart::Error),
-    LoRa(RadioError),
+    //LoRa(RadioError),
     SerDe(postcard::Error),
     Ota(OtaError),
 }
@@ -30,6 +28,17 @@ impl Gateway {
         Gateway { ota: None }
     }
 
+    async fn host_write(
+        &mut self,
+        host: &mut ModuleHost,
+        packet: GatewayPacket,
+    ) -> Result<(), Error> {
+        let mut tx_buffer = [0u8; 256];
+        host.write(&postcard::to_slice(&packet, &mut tx_buffer).map_err(Error::SerDe)?)
+            .await
+            .map_err(Error::Usart)
+    }
+
     async fn init_download(
         &mut self,
         host: &mut ModuleHost,
@@ -41,40 +50,29 @@ impl Gateway {
             block_size: init.block_size,
             binary_sha256: init.binary_sha256,
         });
-        let packet = ota.init_download(lora).await.map_err(Error::Ota)?;
-
-        let mut tx_buffer = [0u8; 256];
-        host.write(&postcard::to_slice(&packet, &mut tx_buffer).map_err(Error::SerDe)?)
-            .await
-            .map_err(Error::Usart)?;
-
+        self.host_write(host, ota.init_download(lora).await.map_err(Error::Ota)?)
+            .await?;
         self.ota = Some(ota);
         Ok(())
     }
 
     async fn continue_download(
         &mut self,
-        host: &mut ModuleHost,
+        _host: &mut ModuleHost,
         lora: &mut ModuleLoRa,
         data: gateway_host_schema::OtaData,
     ) -> Result<(), Error> {
         match self.ota.as_mut() {
             Some(ota) => {
-                let packet = ota
-                    .continue_download(
-                        lora,
-                        OtaDataPacket {
-                            index: data.index,
-                            data: data.data,
-                        },
-                    )
-                    .await
-                    .map_err(Error::Ota)?;
-
-                let mut tx_buffer = [0u8; 256];
-                host.write(&postcard::to_slice(&packet, &mut tx_buffer).map_err(Error::SerDe)?)
-                    .await
-                    .map_err(Error::Usart)?;
+                ota.continue_download(
+                    lora,
+                    OtaDataPacket {
+                        index: data.index,
+                        data: data.data,
+                    },
+                )
+                .await
+                .map_err(Error::Ota)?;
             }
             None => {
                 return Err(Error::Ota(OtaError::NotStarted));
@@ -91,7 +89,7 @@ impl Gateway {
     ) -> Result<(), Error> {
         match postcard::from_bytes::<HostPacket>(uart_buffer).map_err(Error::SerDe)? {
             HostPacket::PingRequest => {
-                host.write(uart_buffer).await.map_err(Error::Usart)?;
+                self.host_write(host, GatewayPacket::PingResponse).await?;
             }
             HostPacket::OtaInit(init) => {
                 info!("init download");
@@ -109,13 +107,26 @@ impl Gateway {
                 }
             }
             HostPacket::OtaData(data) => {
-                //info!("continue download");
+                info!("continue download");
                 self.continue_download(host, lora, data).await?;
             }
             HostPacket::OtaAbort => {
                 if let Some(ota) = self.ota.as_mut().take() {
                     ota.abort_download(lora).await.map_err(Error::Ota)?;
                 }
+            }
+            HostPacket::OtaGetStatus => {
+                let packet = GatewayPacket::OtaStatus({
+                    if let Some(ota) = self.ota.as_ref() {
+                        ota.get_status()
+                    } else {
+                        gateway_host_schema::OtaStatus {
+                            in_progress: false,
+                            not_acked: Vec::new(),
+                        }
+                    }
+                });
+                self.host_write(host, packet).await?;
             }
         }
         Ok(())
@@ -134,10 +145,7 @@ impl Gateway {
                     .await
                     .map_err(Error::Ota)?;
 
-                let mut tx_buffer = [0u8; 256];
-                host.write(&postcard::to_slice(&packet, &mut tx_buffer).map_err(Error::SerDe)?)
-                    .await
-                    .map_err(Error::Usart)?;
+                self.host_write(host, packet).await?;
             }
             None => {}
         }

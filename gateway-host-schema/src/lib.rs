@@ -18,12 +18,14 @@ pub struct OtaData {
 
 #[derive(Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct OtaStatus {
-    pub not_acked: Vec<u16, 128>,
+    pub in_progress: bool,
+    pub not_acked: Vec<u16, 64>,
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum HostPacket {
     PingRequest,
+    OtaGetStatus,
     OtaInit(OtaInitRequest),
     OtaData(OtaData),
     OtaAbort,
