@@ -1,7 +1,7 @@
 use crate::{host::*, lora::*};
 use defmt::*;
-use embassy_stm32::usart;
 use embassy_time::Timer;
+use gateway_host_schema::{self, GatewayPacket, HostPacket, OtaStatus};
 use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use serde::{Deserialize, Serialize};
@@ -12,8 +12,6 @@ pub enum OtaError {
     Serialize,
     Transmit,
     Receive,
-    HostWrite,
-    HostRead,
     InvalidPacketType,
     AlreadyStarted,
     NotStarted,
@@ -25,14 +23,6 @@ fn err_deserialize(_: postcard::Error) -> OtaError {
 
 fn err_serialize(_: postcard::Error) -> OtaError {
     OtaError::Serialize
-}
-
-fn err_host_write(_: usart::Error) -> OtaError {
-    OtaError::HostWrite
-}
-
-fn err_host_read(_: usart::Error) -> OtaError {
-    OtaError::HostRead
 }
 
 fn err_transmit(_: RadioError) -> OtaError {
@@ -108,12 +98,18 @@ impl OtaProducer {
         self.state == OtaProducerState::Done
     }
 
+    pub fn get_status(&self) -> OtaStatus {
+        OtaStatus {
+            not_acked: self.not_acked_indexes.iter().cloned().collect(),
+            in_progress: self.state == OtaProducerState::Download,
+        }
+    }
+
     async fn process_status(
         &mut self,
-        host: &mut ModuleHost,
         _lora: &mut ModuleLoRa,
         status: OtaStatusPacket,
-    ) -> Result<(), OtaError> {
+    ) -> Result<GatewayPacket, OtaError> {
         // remove all acknowledged indexes from the internal registry
         //info! {"ACK {}", status.received_indexes};
         for received in status.received_indexes {
@@ -129,9 +125,6 @@ impl OtaProducer {
             tx_buffer[i + 1] = self.not_acked_indexes[i] as u8;
             warn!("not ACKed {}", self.not_acked_indexes[i]);
         }
-        host.write(&tx_buffer[..1 + self.not_acked_indexes.len()])
-            .await
-            .map_err(err_host_write)?;
 
         // all blocks are acked and the last block has been already sent (thus also acked)
         if self.not_acked_indexes.is_empty()
@@ -139,17 +132,19 @@ impl OtaProducer {
                 == (self.params.binary_size / (self.params.block_size as u32))
         {
             self.state = OtaProducerState::Done;
-            info!("ota producer done")
+            info!("ota producer done");
+            Ok(GatewayPacket::OtaDone)
+            //TODO transmit done to the node
+        } else {
+            Ok(GatewayPacket::OtaStatus(self.get_status()))
         }
-        Ok(())
     }
 
     pub async fn process_response(
         &mut self,
-        host: &mut ModuleHost,
         lora: &mut ModuleLoRa,
         buffer: &[u8],
-    ) -> Result<(), OtaError> {
+    ) -> Result<GatewayPacket, OtaError> {
         match postcard::from_bytes::<OtaPacket>(buffer).map_err(err_deserialize)? {
             OtaPacket::Init(_) => return Err(OtaError::InvalidPacketType),
             OtaPacket::Data(_) => return Err(OtaError::InvalidPacketType),
@@ -157,43 +152,40 @@ impl OtaProducer {
             OtaPacket::InitAck => {
                 if self.state == OtaProducerState::Init {
                     self.state = OtaProducerState::Download;
-                    host.write(&[20u8]).await.map_err(err_host_write)?;
-                    Ok(())
+                    Ok(GatewayPacket::OtaInitAck)
                 } else {
-                    return Err(OtaError::InvalidPacketType);
+                    Err(OtaError::InvalidPacketType)
                 }
             }
             OtaPacket::Status(status) => {
                 if self.state != OtaProducerState::Init {
-                    self.process_status(host, lora, status).await
+                    self.process_status(lora, status).await
                 } else {
-                    return Err(OtaError::InvalidPacketType);
+                    Err(OtaError::InvalidPacketType)
                 }
             }
             OtaPacket::AbortAck => {
                 self.state = OtaProducerState::Done;
-                host.write(&[22u8]).await.map_err(err_host_write)?;
-                Ok(())
+                Ok(GatewayPacket::OtaAbortAck)
             }
         }
     }
 
     pub async fn init_download(
         &mut self,
-        host: &mut ModuleHost,
         lora: &mut ModuleLoRa,
-    ) -> Result<(), OtaError> {
+    ) -> Result<GatewayPacket, OtaError> {
         let mut tx_buffer = [0u8; 128];
         let packet = postcard::to_slice(&OtaPacket::Init(self.params.clone()), &mut tx_buffer)
             .map_err(err_serialize)?;
 
         let mut last_error: Option<OtaError> = None;
-        for _ in 0..3 {
+        for _ in 0..5 {
             let mut rx_buffer = [0u8; 128];
             lora.transmit(&packet).await.map_err(err_transmit)?;
             match lora.receive(&mut rx_buffer).await {
-                Ok(len) => match self.process_response(host, lora, &rx_buffer[..len]).await {
-                    Ok(()) => return Ok(()),
+                Ok(len) => match self.process_response(lora, &rx_buffer[..len]).await {
+                    Ok(ret) => return Ok(ret),
                     Err(e) => {
                         warn!("init download error: {}", e);
                         last_error = Some(e);
@@ -211,7 +203,6 @@ impl OtaProducer {
 
     pub async fn continue_download(
         &mut self,
-        _host: &mut ModuleHost,
         lora: &mut ModuleLoRa,
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
@@ -233,9 +224,8 @@ impl OtaProducer {
 
     pub async fn abort_download(
         &mut self,
-        host: &mut ModuleHost,
         lora: &mut ModuleLoRa,
-    ) -> Result<(), OtaError> {
+    ) -> Result<GatewayPacket, OtaError> {
         let mut tx_buffer = [0u8; 128];
         let packet =
             postcard::to_slice(&OtaPacket::Abort, &mut tx_buffer).map_err(err_serialize)?;
@@ -246,8 +236,8 @@ impl OtaProducer {
             let mut rx_buffer = [0u8; 128];
             lora.transmit(&packet).await.map_err(err_transmit)?;
             match lora.receive(&mut rx_buffer).await {
-                Ok(len) => match self.process_response(host, lora, &rx_buffer[..len]).await {
-                    Ok(()) => return Ok(()),
+                Ok(len) => match self.process_response(lora, &rx_buffer[..len]).await {
+                    Ok(ret) => return Ok(ret),
                     Err(e) => {
                         warn!("abort download error: {}", e);
                         last_error = Some(e);

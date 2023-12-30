@@ -551,6 +551,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gateway-host-schema"
+version = "0.1.0"
+dependencies = [
+ "heapless 0.7.16",
+ "postcard",
+ "serde",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -610,9 +619,9 @@ checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "libc"
-version = "0.2.150"
+version = "0.2.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89d92a4743f9a61002fae18374ed11e7973f530cb3a3255fb354818118b2203c"
+checksum = "302d7ab3130588088d277783b1e2d2e10c9e9e4a16dd9050e6ec93fb3e7048f4"
 
 [[package]]
 name = "litrs"
@@ -702,6 +711,7 @@ dependencies = [
  "embedded-hal 0.2.7",
  "embedded-storage",
  "futures",
+ "gateway-host-schema",
  "heapless 0.7.16",
  "lora-phy",
  "panic-probe",
