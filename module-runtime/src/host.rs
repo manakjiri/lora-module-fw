@@ -1,4 +1,4 @@
-use defmt::{error, info};
+use defmt::error;
 use embassy_stm32::peripherals;
 use embassy_stm32::usart::{self, Uart};
 
@@ -18,7 +18,7 @@ impl ModuleHost {
     pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, usart::Error> {
         let mut buff = [0u8; HOST_UART_BUFFER_SIZE];
         let len = self.uart.read_until_idle(&mut buff).await?;
-        info!("RX {}: {:?}", len, &buff[..len]);
+        //info!("RX {}: {:?}", len, &buff[..len]);
         match maxval_decode(&buff[..len], buffer, 254) {
             Ok(len) => Ok(len),
             Err(e) => {
@@ -37,7 +37,7 @@ impl ModuleHost {
                 return Err(usart::Error::BufferTooLong);
             }
         };
-        info!("TX {}: {:?}", len, &buff[..len]);
+        //info!("TX {}: {:?}", len, &buff[..len]);
         self.uart.write(&buff[..len]).await
     }
 }

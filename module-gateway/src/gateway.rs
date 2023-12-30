@@ -79,7 +79,7 @@ impl Gateway {
                 }
             }
             HostPacket::OtaData(data) => {
-                info!("continue download");
+                //info!("continue download");
                 self.continue_download(lora, data).await?;
                 None
             }
