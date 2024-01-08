@@ -1,7 +1,7 @@
-use crate::{host::*, lora::*};
+use crate::lora::*;
 use defmt::*;
 use embassy_time::Timer;
-use gateway_host_schema::{self, GatewayPacket, HostPacket, OtaStatus};
+use gateway_host_schema::{self, GatewayPacket, OtaStatus};
 use heapless::Vec;
 use lora_phy::mod_params::RadioError;
 use serde::{Deserialize, Serialize};
