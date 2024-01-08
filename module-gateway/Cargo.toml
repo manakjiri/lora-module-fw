@@ -12,7 +12,7 @@ bench = false
 
 [dependencies]
 module-runtime = { path = "../module-runtime" }
-embassy-executor = { path = "../external/embassy/embassy-executor", features = ["nightly", "arch-cortex-m", "executor-thread", "defmt", "integrated-timers"] }
+embassy-executor = { path = "../external/embassy/embassy-executor" }
 
 [profile.release]
 codegen-units = 1 # better optimizations
