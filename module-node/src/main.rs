@@ -8,12 +8,12 @@ use embassy_executor::Spawner;
 use module_runtime::*;
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
     let mut ota_consumer = OtaConsumer::new();
     info!("hello from node");
 
-    _spawner.spawn(status_led_task(module.led)).unwrap();
+    spawner.spawn(status_led_task(module.led)).unwrap();
     let mut lora = module.lora;
 
     let mut rx_buffer = [0u8; 128];

@@ -1,0 +1,6 @@
+[submodule "external/embassy"]
+	path = external/embassy
+	url = git@github.com:manakjiri/embassy.git
+[submodule "external/lora-rs"]
+	path = external/lora-rs
+	url = git@github.com:manakjiri/lora-rs.git

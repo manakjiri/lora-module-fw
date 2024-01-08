@@ -1,5 +1,5 @@
+use crate::iv::{Stm32wlInterfaceVariant, SubghzSpiDevice};
 use defmt::info;
-use embassy_lora::iv::Stm32wlInterfaceVariant;
 use embassy_stm32::gpio::{AnyPin, Output};
 use embassy_stm32::peripherals;
 use embassy_stm32::spi::Spi;
@@ -11,7 +11,9 @@ use lora_phy::LoRa;
 pub struct ModuleLoRa {
     pub lora: LoRa<
         SX1261_2<
-            Spi<'static, peripherals::SUBGHZSPI, peripherals::DMA1_CH1, peripherals::DMA1_CH2>,
+            SubghzSpiDevice<
+                Spi<'static, peripherals::SUBGHZSPI, peripherals::DMA1_CH1, peripherals::DMA1_CH2>,
+            >,
             Stm32wlInterfaceVariant<Output<'static, AnyPin>>,
         >,
         Delay,

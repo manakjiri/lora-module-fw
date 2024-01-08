@@ -7,14 +7,11 @@ pub use cortex_m;
 pub use cortex_m_rt;
 pub use defmt;
 pub use defmt_rtt;
-pub use embassy_embedded_hal;
 pub use embassy_executor;
 pub use embassy_futures;
-pub use embassy_lora;
 pub use embassy_stm32;
 pub use embassy_sync;
 pub use embassy_time;
-pub use embedded_storage;
 pub use futures;
 pub use gateway_host_schema;
 pub use heapless;
@@ -26,7 +23,7 @@ pub use panic_probe;
 pub use postcard;
 pub use serde;
 
-use embassy_lora::iv::Stm32wlInterfaceVariant;
+use self::iv::{Stm32wlInterfaceVariant, SubghzSpiDevice};
 use embassy_stm32::crc::{self, Crc};
 use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
 use embassy_stm32::rcc::*;
@@ -37,11 +34,12 @@ use embassy_stm32::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Delay, Timer};
-use lora_phy::mod_params::*;
-use lora_phy::sx1261_2::SX1261_2;
+use lora_phy::sx1261_2::{Sx126xVariant, TcxoCtrlVoltage, SX1261_2};
 use lora_phy::LoRa;
+use lora_phy::{mod_params::*, sx1261_2};
 
 mod host;
+mod iv;
 mod lora;
 mod ota;
 
@@ -49,7 +47,7 @@ const LORA_FREQUENCY_IN_HZ: u32 = 869_525_000; // warning: set this appropriatel
 
 bind_interrupts!(struct Irqs{
     LPUART1 => usart::InterruptHandler<peripherals::LPUART1>;
-    SUBGHZ_RADIO => embassy_lora::iv::InterruptHandler;
+    SUBGHZ_RADIO => self::iv::InterruptHandler;
 });
 
 pub enum ModuleVersion {
@@ -95,18 +93,19 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
     });
     let p = embassy_stm32::init(config);
 
-    let spi = Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH1, p.DMA1_CH2);
+    let spi = SubghzSpiDevice(Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH1, p.DMA1_CH2));
     // Set CTRL1 and CTRL3 for high-power transmission, while CTRL2 acts as an RF switch between tx and rx
     let ctrl2 = Output::new(p.PC5.degrade(), Level::High, Speed::High);
+    let config = sx1261_2::Config {
+        chip: Sx126xVariant::Stm32wl,
+        tcxo_ctrl: Some(TcxoCtrlVoltage::Ctrl1V7),
+        use_dcdc: true,
+        use_dio2_as_rfswitch: true,
+    };
     let iv = Stm32wlInterfaceVariant::new(Irqs, None, Some(ctrl2)).unwrap();
-
-    let mut lora = LoRa::new(
-        SX1261_2::new(BoardType::Stm32wlSx1262, spi, iv),
-        false,
-        Delay,
-    )
-    .await
-    .unwrap();
+    let mut lora = LoRa::new(SX1261_2::new(spi, iv, config), false, Delay)
+        .await
+        .unwrap();
 
     let lora_modulation = lora
         .create_modulation_params(
