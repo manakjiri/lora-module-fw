@@ -3,6 +3,10 @@
 version: 2
 updates:
   - package-ecosystem: cargo
+    directory: /gateway-host-schema
+    schedule:
+      interval: daily
+  - package-ecosystem: cargo
     directory: /module-gateway
     schedule:
       interval: daily
