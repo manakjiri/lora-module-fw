@@ -76,10 +76,7 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
     let mut config = embassy_stm32::Config::default();
     config.rcc.hse = Some(Hse {
         freq: Hertz(32_000_000),
-        mode: match module_config.version {
-            ModuleVersion::NucleoWL55JC => HseMode::Bypass,
-            ModuleVersion::Lumia => HseMode::Oscillator,
-        },
+        mode: HseMode::Bypass,
         prescaler: HsePrescaler::DIV1,
     });
     config.rcc.mux = ClockSrc::PLL1_R;
@@ -137,7 +134,10 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
     )
     .unwrap();
 
-    let led = Output::new(p.PB15 /* p.PC13 */, Level::High, Speed::Low).degrade();
+    let led = match module_config.version {
+        ModuleVersion::NucleoWL55JC => Output::new(p.PB15, Level::High, Speed::Low).degrade(),
+        ModuleVersion::Lumia => Output::new(p.PC13, Level::High, Speed::Low).degrade(),
+    };
 
     let crc = Crc::new(
         p.CRC,

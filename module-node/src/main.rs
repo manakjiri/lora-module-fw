@@ -9,7 +9,7 @@ use module_runtime::*;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
+    let module = init(ModuleConfig::new(ModuleVersion::Lumia)).await;
     let mut ota_consumer = OtaConsumer::new();
     info!("hello from node");
 
