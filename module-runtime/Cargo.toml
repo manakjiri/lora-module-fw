@@ -31,7 +31,7 @@ panic-probe = { version = "0.3", features = ["print-defmt"] }
 
 futures = { version = "0.3.30", default-features = false, features = ["async-await"] }
 # must be same as postcard
-heapless = { version = "0.7", default-features = false, features = ["serde"] }
+heapless = { version = "0.7.17", default-features = false, features = ["serde"] }
 chrono = { version = "^0.4", default-features = false }
 postcard = { version = "1.0.8", default-features = false, features = ["heapless", "use-defmt"]}
 serde = { version = "1.0", default-features = false }
