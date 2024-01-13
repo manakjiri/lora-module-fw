@@ -22,7 +22,12 @@ pub async fn gateway_task(mut lora: ModuleLoRa) {
     let mut gw = Gateway::new();
     let mut lora_buffer = [0u8; 128];
     loop {
-        match select(HOST2GATEWAY.receive(), lora.receive(&mut lora_buffer)).await {
+        match select(
+            HOST2GATEWAY.receive(),
+            lora.receive_continuous(&mut lora_buffer),
+        )
+        .await
+        {
             Either::First(p) => match gw.process_host_message(&mut lora, p).await {
                 Ok(resp) => {
                     if let Some(r) = resp {

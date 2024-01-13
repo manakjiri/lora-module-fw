@@ -25,6 +25,7 @@ impl OtaConsumer {
     ) -> Result<(), OtaError> {
         info!("init download");
         self.params = Some(init);
+        self.recent_indexes.clear();
 
         let mut tx_buffer = [0u8; 128];
         lora.transmit(
@@ -39,7 +40,7 @@ impl OtaConsumer {
         lora: &mut ModuleLoRa,
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
-        //info!("continue download");
+        info!("data: index {}", data.index);
         let begin = match &self.params {
             Some(p) => (p.block_size * data.index) as usize,
             None => {
@@ -50,7 +51,7 @@ impl OtaConsumer {
         self.temp_buffer[begin..end].copy_from_slice(&data.data);
 
         if self.recent_indexes.is_full() {
-            self.recent_indexes.pop();
+            self.recent_indexes.remove(0);
         }
         let _ = self.recent_indexes.push(data.index);
 

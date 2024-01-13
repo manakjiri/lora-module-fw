@@ -48,13 +48,16 @@ impl OtaProducer {
         status: OtaStatusPacket,
     ) -> Result<GatewayPacket, OtaError> {
         // remove all acknowledged indexes from the internal registry
-        //info! {"ACK {}", status.received_indexes};
-        for received in status.received_indexes {
-            self.not_acked_indexes
-                .iter()
-                .position(|i| *i == received)
-                .map(|i| self.not_acked_indexes.swap_remove(i));
+        for received in status.received_indexes.as_slice() {
+            if let Some(i) = self.not_acked_indexes.iter().position(|i| *i == *received) {
+                self.not_acked_indexes.swap_remove(i);
+            }
         }
+        info!(
+            "status: pend {}, ack {}",
+            self.not_acked_indexes.as_slice(),
+            status.received_indexes.as_slice()
+        );
         //TODO proper handling, now just transmit not acked to host to deal with it
         let mut tx_buffer = [0u8; 128];
         tx_buffer[0] = 21;
@@ -116,11 +119,12 @@ impl OtaProducer {
         let packet = postcard::to_slice(&OtaPacket::Init(self.params.clone()), &mut tx_buffer)
             .map_err(err::serialize)?;
 
+        //TODO move to a function
         let mut last_error: Option<OtaError> = None;
         for _ in 0..5 {
             let mut rx_buffer = [0u8; 128];
             lora.transmit(&packet).await.map_err(err::transmit)?;
-            match lora.receive(&mut rx_buffer).await {
+            match lora.receive_single(&mut rx_buffer).await {
                 Ok(len) => match self.process_response(lora, &rx_buffer[..len]).await {
                     Ok(ret) => return Ok(ret),
                     Err(e) => {
@@ -146,6 +150,7 @@ impl OtaProducer {
         let mut tx_buffer = [0u8; 128];
         let current_index = data.index;
 
+        info!("data: index {}", data.index);
         lora.transmit(
             postcard::to_slice(&OtaPacket::Data(data), &mut tx_buffer).map_err(err::serialize)?,
         )
@@ -172,7 +177,7 @@ impl OtaProducer {
         for _ in 0..10 {
             let mut rx_buffer = [0u8; 128];
             lora.transmit(&packet).await.map_err(err::transmit)?;
-            match lora.receive(&mut rx_buffer).await {
+            match lora.receive_single(&mut rx_buffer).await {
                 Ok(len) => match self.process_response(lora, &rx_buffer[..len]).await {
                     Ok(ret) => return Ok(ret),
                     Err(e) => {

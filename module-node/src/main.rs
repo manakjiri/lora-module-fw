@@ -18,7 +18,7 @@ async fn main(spawner: Spawner) {
 
     let mut rx_buffer = [0u8; 128];
     loop {
-        match lora.receive(rx_buffer.as_mut()).await {
+        match lora.receive_continuous(rx_buffer.as_mut()).await {
             Ok(len) => match ota_consumer
                 .process_message(&mut lora, &rx_buffer[..len])
                 .await

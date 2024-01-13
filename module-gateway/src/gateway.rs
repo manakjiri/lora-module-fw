@@ -1,12 +1,9 @@
 use defmt::*;
-use embassy_stm32::usart;
 use gateway_host_schema::{self, HostPacket};
 use module_runtime::{gateway_host_schema::GatewayPacket, heapless::Vec, *};
 
 #[derive(Debug, defmt::Format, PartialEq)]
 pub enum Error {
-    Usart(usart::Error),
-    SerDe(postcard::Error),
     Ota(OtaError),
 }
 
