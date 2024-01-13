@@ -9,13 +9,11 @@ use module_runtime::*;
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let module = init(ModuleConfig::new(ModuleVersion::Lumia)).await;
-    let mut ota_consumer = OtaConsumer::new();
+    let module = init(ModuleConfig::new(ModuleVersion::Lumia), &spawner).await;
     info!("hello from node");
-
-    spawner.spawn(status_led_task(module.led)).unwrap();
+    
+    let mut ota_consumer = OtaConsumer::new();
     let mut lora = module.lora;
-
     let mut rx_buffer = [0u8; 128];
     loop {
         match lora.receive_continuous(rx_buffer.as_mut()).await {

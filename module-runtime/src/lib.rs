@@ -69,10 +69,12 @@ pub struct ModuleInterface {
     pub lora: ModuleLoRa,
     pub host: ModuleHost,
     pub crc: crc::Crc<'static>,
-    pub led: Output<'static, AnyPin>,
 }
 
-pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
+pub async fn init(
+    module_config: ModuleConfig,
+    spawner: &embassy_executor::Spawner,
+) -> ModuleInterface {
     let mut config = embassy_stm32::Config::default();
     config.rcc.hse = Some(Hse {
         freq: Hertz(32_000_000),
@@ -149,6 +151,8 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
         //TODO crc::Config::new(crc::InputReverseConfig::None, false, 0).unwrap(),
     );
 
+    spawner.spawn(status_led_task(led)).unwrap();
+
     ModuleInterface {
         host: ModuleHost { uart: lpuart1 },
         lora: ModuleLoRa {
@@ -158,7 +162,6 @@ pub async fn init(module_config: ModuleConfig) -> ModuleInterface {
             lora_rx_params,
         },
         crc,
-        led,
     }
 }
 
@@ -173,7 +176,7 @@ pub async fn status_led(cmd: LedCommand) {
 }
 
 #[embassy_executor::task]
-pub async fn status_led_task(mut led: Output<'static, AnyPin>) {
+async fn status_led_task(mut led: Output<'static, AnyPin>) {
     //let mut led = Output::new(pin, Level::Low, Speed::Low);
     led.set_low();
     loop {

@@ -65,14 +65,12 @@ pub async fn gateway_task(mut lora: ModuleLoRa) {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC)).await;
+    let module = init(ModuleConfig::new(ModuleVersion::NucleoWL55JC), &spawner).await;
 
     info!("hello from gateway");
-
-    spawner.spawn(status_led_task(module.led)).unwrap();
     spawner.spawn(gateway_task(module.lora)).unwrap();
-    let mut host = module.host;
 
+    let mut host = module.host;
     let mut uart_buffer = [0u8; 128];
     loop {
         match select(host.read(&mut uart_buffer), GATEWAY2HOST.receive()).await {
