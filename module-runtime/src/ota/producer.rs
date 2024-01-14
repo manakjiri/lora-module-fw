@@ -1,7 +1,6 @@
 use crate::lora::*;
 use crate::ota::common::*;
 use defmt::*;
-use embassy_time::Timer;
 use gateway_host_schema::{self, GatewayPacket, OtaStatus};
 use heapless::Vec;
 
@@ -58,14 +57,6 @@ impl OtaProducer {
             self.not_acked_indexes.as_slice(),
             status.received_indexes.as_slice()
         );
-        //TODO proper handling, now just transmit not acked to host to deal with it
-        let mut tx_buffer = [0u8; 128];
-        tx_buffer[0] = 21;
-        for i in 0..self.not_acked_indexes.len() {
-            tx_buffer[i + 1] = self.not_acked_indexes[i] as u8;
-            warn!("not ACKed {}", self.not_acked_indexes[i]);
-        }
-
         // all blocks are acked and the last block has been already sent (thus also acked)
         if self.not_acked_indexes.is_empty()
             && self.highest_sent_index as u32
@@ -83,9 +74,9 @@ impl OtaProducer {
     pub async fn process_response(
         &mut self,
         lora: &mut ModuleLoRa,
-        buffer: &[u8],
+        packet: OtaPacket,
     ) -> Result<GatewayPacket, OtaError> {
-        match postcard::from_bytes::<OtaPacket>(buffer).map_err(err::deserialize)? {
+        match packet {
             OtaPacket::Init(_) => return Err(OtaError::InvalidPacketType),
             OtaPacket::Data(_) => return Err(OtaError::InvalidPacketType),
             OtaPacket::Abort => return Err(OtaError::InvalidPacketType),
@@ -111,35 +102,25 @@ impl OtaProducer {
         }
     }
 
+    pub async fn process_response_raw(
+        &mut self,
+        lora: &mut ModuleLoRa,
+        packet: &[u8],
+    ) -> Result<GatewayPacket, OtaError> {
+        self.process_response(
+            lora,
+            postcard::from_bytes::<OtaPacket>(packet).map_err(err::deserialize)?,
+        )
+        .await
+    }
+
     pub async fn init_download(
         &mut self,
         lora: &mut ModuleLoRa,
     ) -> Result<GatewayPacket, OtaError> {
-        let mut tx_buffer = [0u8; 128];
-        let packet = postcard::to_slice(&OtaPacket::Init(self.params.clone()), &mut tx_buffer)
-            .map_err(err::serialize)?;
-
-        //TODO move to a function
-        let mut last_error: Option<OtaError> = None;
-        for _ in 0..5 {
-            let mut rx_buffer = [0u8; 128];
-            lora.transmit(&packet).await.map_err(err::transmit)?;
-            match lora.receive_single(&mut rx_buffer).await {
-                Ok(len) => match self.process_response(lora, &rx_buffer[..len]).await {
-                    Ok(ret) => return Ok(ret),
-                    Err(e) => {
-                        warn!("init download error: {}", e);
-                        last_error = Some(e);
-                    }
-                },
-                Err(_e) => {
-                    warn!("init download error: {}", _e);
-                    last_error = Some(OtaError::Receive);
-                }
-            }
-            Timer::after_millis(100).await;
-        }
-        Err(last_error.unwrap())
+        let packet = OtaPacket::Init(self.params.clone());
+        let resp = lora_transmit_until_response(lora, &packet, 10).await?;
+        self.process_response(lora, resp).await
     }
 
     pub async fn continue_download(
@@ -147,17 +128,14 @@ impl OtaProducer {
         lora: &mut ModuleLoRa,
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
-        let mut tx_buffer = [0u8; 128];
         let current_index = data.index;
-
         info!("data: index {}", data.index);
-        lora.transmit(
-            postcard::to_slice(&OtaPacket::Data(data), &mut tx_buffer).map_err(err::serialize)?,
-        )
-        .await
-        .map_err(err::transmit)?;
+        lora_transmit(lora, &OtaPacket::Data(data)).await?;
 
-        self.not_acked_indexes.push(current_index).unwrap();
+        if !self.not_acked_indexes.contains(&current_index) {
+            //TODO handle the case where this would overflow - we have too many unACKED, need to throttle transmit
+            self.not_acked_indexes.push(current_index).unwrap();
+        }
         if current_index > self.highest_sent_index {
             self.highest_sent_index = current_index;
         }
@@ -168,30 +146,7 @@ impl OtaProducer {
         &mut self,
         lora: &mut ModuleLoRa,
     ) -> Result<GatewayPacket, OtaError> {
-        let mut tx_buffer = [0u8; 128];
-        let packet =
-            postcard::to_slice(&OtaPacket::Abort, &mut tx_buffer).map_err(err::serialize)?;
-
-        //TODO move to a function
-        let mut last_error: Option<OtaError> = None;
-        for _ in 0..10 {
-            let mut rx_buffer = [0u8; 128];
-            lora.transmit(&packet).await.map_err(err::transmit)?;
-            match lora.receive_single(&mut rx_buffer).await {
-                Ok(len) => match self.process_response(lora, &rx_buffer[..len]).await {
-                    Ok(ret) => return Ok(ret),
-                    Err(e) => {
-                        warn!("abort download error: {}", e);
-                        last_error = Some(e);
-                    }
-                },
-                Err(_e) => {
-                    warn!("abort download error: {}", _e);
-                    last_error = Some(OtaError::Receive);
-                }
-            }
-            Timer::after_millis(100).await;
-        }
-        Err(last_error.unwrap())
+        let resp = lora_transmit_until_response(lora, &OtaPacket::Abort, 10).await?;
+        self.process_response(lora, resp).await
     }
 }

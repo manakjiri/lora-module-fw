@@ -26,13 +26,7 @@ impl OtaConsumer {
         info!("init download");
         self.params = Some(init);
         self.recent_indexes.clear();
-
-        let mut tx_buffer = [0u8; 128];
-        lora.transmit(
-            &postcard::to_slice(&OtaPacket::InitAck, &mut tx_buffer).map_err(err::serialize)?,
-        )
-        .await
-        .map_err(err::transmit)
+        lora_transmit(lora, &OtaPacket::InitAck).await
     }
 
     async fn handle_data(
@@ -57,27 +51,18 @@ impl OtaConsumer {
             let _ = self.recent_indexes.push(data.index);
         }
 
-        let mut tx_buffer = [0u8; 128];
-        let packet = OtaStatusPacket {
-            received_indexes: self.recent_indexes.iter().cloned().collect(),
-        };
-        lora.transmit(
-            &postcard::to_slice(&OtaPacket::Status(packet), &mut tx_buffer)
-                .map_err(err::serialize)?,
+        lora_transmit(
+            lora,
+            &OtaPacket::Status(OtaStatusPacket {
+                received_indexes: self.recent_indexes.iter().cloned().collect(),
+            }),
         )
         .await
-        .map_err(err::transmit)
     }
 
     async fn handle_abort(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
         info!("abort download");
-
-        let mut tx_buffer = [0u8; 128];
-        lora.transmit(
-            &postcard::to_slice(&OtaPacket::AbortAck, &mut tx_buffer).map_err(err::serialize)?,
-        )
-        .await
-        .map_err(err::transmit)
+        lora_transmit(lora, &OtaPacket::AbortAck).await
     }
 
     pub async fn process_message(

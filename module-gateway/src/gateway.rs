@@ -111,7 +111,7 @@ impl Gateway {
     ) -> Result<Option<GatewayPacket>, Error> {
         match self.ota.as_mut() {
             Some(ota) => Ok(Some(
-                ota.process_response(lora, lora_buffer)
+                ota.process_response_raw(lora, lora_buffer)
                     .await
                     .map_err(Error::Ota)?,
             )),
