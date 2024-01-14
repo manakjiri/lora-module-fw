@@ -26,6 +26,7 @@ pub use serde;
 use self::iv::{Stm32wlInterfaceVariant, SubghzSpiDevice};
 use embassy_stm32::crc::{self, Crc};
 use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
+use embassy_stm32::i2c::{self, I2c};
 use embassy_stm32::rcc::*;
 use embassy_stm32::spi::Spi;
 use embassy_stm32::time::Hertz;
@@ -48,6 +49,8 @@ const LORA_FREQUENCY_IN_HZ: u32 = 869_525_000; // warning: set this appropriatel
 bind_interrupts!(struct Irqs{
     LPUART1 => usart::InterruptHandler<peripherals::LPUART1>;
     SUBGHZ_RADIO => self::iv::InterruptHandler;
+    I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
+    I2C1_ER => i2c::ErrorInterruptHandler<peripherals::I2C1>;
 });
 
 pub enum ModuleVersion {
@@ -65,9 +68,78 @@ impl ModuleConfig {
     }
 }
 
+pub struct Display {
+    pub i2c: I2c<'static, peripherals::I2C1, peripherals::DMA1_CH5, peripherals::DMA1_CH6>,
+}
+
+impl Display {
+    async fn write_command(&mut self, cmd: u8) -> Result<(), i2c::Error> {
+        self.i2c.write(0b0111100, [0x00u8, cmd].as_slice()).await
+    }
+
+    pub async fn write_frame(&mut self, data: &[u8]) -> Result<(), i2c::Error> {
+        for i in 0..8 {
+            let mut buffer = [0u8; 128 + 1];
+            buffer[0] = 0x40u8;
+            buffer[1..].copy_from_slice(&data[i * 128..(i + 1) * 128]);
+            self.write_command(0xB0 + i as u8).await?;
+            self.write_command(0x00).await?;
+            self.write_command(0x10).await?;
+            self.i2c.write(0b0111100, &buffer).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn init(&mut self) -> Result<(), i2c::Error> {
+        self.write_command(0xAE).await?; //display off
+
+        self.write_command(0x20).await?; //Set Memory Addressing Mode
+        self.write_command(0x10).await?; // 00,Horizontal Addressing Mode; 01,Vertical Addressing Mode;
+                                         // 10,Page Addressing Mode (RESET); 11,Invalid
+
+        self.write_command(0xB0).await?; //Set Page Start Address for Page Addressing Mode,0-7
+
+        self.write_command(0x00).await?; //---set low column address
+        self.write_command(0x10).await?; //---set high column address
+
+        self.write_command(0x40).await?; //--set start line address - CHECK
+
+        self.write_command(0x81).await?; //--set contrast control register - CHECK
+        self.write_command(0xFF).await?;
+
+        self.write_command(0xA1).await?; //--set segment re-map 0 to 127 - CHECK
+        self.write_command(0xA6).await?; //--set normal color
+        self.write_command(0xA8).await?; //--set multiplex ratio(1 to 64) - CHECK
+        self.write_command(0x3F).await?; //
+
+        self.write_command(0xA4).await?; //0xa4,Output follows RAM content;0xa5,Output ignores RAM content
+
+        self.write_command(0xD3).await?; //-set display offset - CHECK
+        self.write_command(0x00).await?; //-not offset
+
+        self.write_command(0xD5).await?; //--set display clock divide ratio/oscillator frequency
+        self.write_command(0xF0).await?; //--set divide ratio
+
+        self.write_command(0xD9).await?; //--set pre-charge period
+        self.write_command(0x22).await?; //
+
+        self.write_command(0xDA).await?; //--set com pins hardware configuration - CHECK
+        self.write_command(0x12).await?;
+
+        self.write_command(0xDB).await?; //--set vcomh
+        self.write_command(0x20).await?; //0x20,0.77xVcc
+
+        self.write_command(0x8D).await?; //--set DC-DC enable
+        self.write_command(0x14).await?; //
+        self.write_command(0xAF).await?; //--turn on SSD1306 panel
+        Ok(())
+    }
+}
+
 pub struct ModuleInterface {
     pub lora: ModuleLoRa,
     pub host: ModuleHost,
+    pub display: Display,
 }
 
 pub async fn init(
@@ -157,6 +229,17 @@ pub async fn init(
         //TODO crc::Config::new(crc::InputReverseConfig::None, false, 0).unwrap(),
     );
 
+    let i2c = I2c::new(
+        p.I2C1,
+        p.PB8,
+        p.PB7,
+        Irqs,
+        p.DMA1_CH5,
+        p.DMA1_CH6,
+        Hertz(400_000),
+        Default::default(),
+    );
+
     spawner.spawn(status_led_task(led)).unwrap();
 
     ModuleInterface {
@@ -168,6 +251,7 @@ pub async fn init(
             lora_rx_params,
             crc,
         },
+        display: Display { i2c },
     }
 }
 

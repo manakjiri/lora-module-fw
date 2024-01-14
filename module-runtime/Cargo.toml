@@ -23,6 +23,7 @@ embassy-executor = { path = "../external/embassy/embassy-executor", features = [
 embassy-time = { path = "../external/embassy/embassy-time", features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-sync = { path = "../external/embassy/embassy-sync", features = ["defmt"] }
 embassy-futures = { path = "../external/embassy/embassy-futures", features = ["defmt"] }
+embassy-embedded-hal = { path = "../external/embassy/embassy-embedded-hal" }
 lora-phy = { path = "../external/lora-rs/lora-phy", features = ["lorawan-radio"] }
 
 defmt = "0.3"
