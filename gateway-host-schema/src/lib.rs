@@ -8,6 +8,7 @@ pub struct OtaInitRequest {
     pub binary_size: u32,
     pub binary_sha256: [u8; 32],
     pub block_size: u16,
+    pub block_count: u16,
 }
 
 #[derive(Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -28,7 +29,8 @@ pub enum HostPacket {
     OtaGetStatus,
     OtaInit(OtaInitRequest),
     OtaData(OtaData),
-    OtaAbort,
+    OtaDoneRequest,
+    OtaAbortRequest,
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
@@ -36,6 +38,6 @@ pub enum GatewayPacket {
     PingResponse,
     OtaInitAck,
     OtaStatus(OtaStatus),
-    OtaDone,
+    OtaDoneAck,
     OtaAbortAck,
 }

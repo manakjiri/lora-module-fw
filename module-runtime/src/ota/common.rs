@@ -40,6 +40,7 @@ pub struct OtaInitPacket {
     pub binary_size: u32,
     pub binary_sha256: [u8; 32],
     pub block_size: u16,
+    pub block_count: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -66,8 +67,8 @@ pub enum OtaPacket {
     InitAck,
     Data(OtaDataPacket),
     Status(OtaStatusPacket),
-    //Done,
-    //DoneAck,
+    Done,
+    DoneAck,
     Abort,
     AbortAck,
 }

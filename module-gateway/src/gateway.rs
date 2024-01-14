@@ -24,6 +24,7 @@ impl Gateway {
         let mut ota = OtaProducer::new(OtaInitPacket {
             binary_size: init.binary_size,
             block_size: init.block_size,
+            block_count: init.block_count,
             binary_sha256: init.binary_sha256,
         });
         let ret = ota.init_download(lora).await.map_err(Error::Ota)?;
@@ -80,7 +81,14 @@ impl Gateway {
                 self.continue_download(lora, data).await?;
                 None
             }
-            HostPacket::OtaAbort => {
+            HostPacket::OtaDoneRequest => {
+                if let Some(ota) = self.ota.as_mut().take() {
+                    Some(ota.done_download(lora).await.map_err(Error::Ota)?)
+                } else {
+                    Some(GatewayPacket::OtaDoneAck) //FIXME this should return invalid command or something
+                }
+            }
+            HostPacket::OtaAbortRequest => {
                 if let Some(ota) = self.ota.as_mut().take() {
                     Some(ota.abort_download(lora).await.map_err(Error::Ota)?)
                 } else {

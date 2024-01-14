@@ -65,7 +65,7 @@ impl OtaProducer {
         {
             self.state = OtaProducerState::Done;
             info!("ota producer done");
-            Ok(GatewayPacket::OtaDone)
+            Ok(GatewayPacket::OtaDoneAck)
             //TODO transmit done to the node
         } else {
             Ok(GatewayPacket::OtaStatus(self.get_status()))
@@ -80,6 +80,7 @@ impl OtaProducer {
         match packet {
             OtaPacket::Init(_) => return Err(OtaError::InvalidPacketType),
             OtaPacket::Data(_) => return Err(OtaError::InvalidPacketType),
+            OtaPacket::Done => return Err(OtaError::InvalidPacketType),
             OtaPacket::Abort => return Err(OtaError::InvalidPacketType),
             OtaPacket::InitAck => {
                 if self.state == OtaProducerState::Init {
@@ -95,6 +96,10 @@ impl OtaProducer {
                 } else {
                     Err(OtaError::InvalidPacketType)
                 }
+            }
+            OtaPacket::DoneAck => {
+                self.state = OtaProducerState::Done;
+                Ok(GatewayPacket::OtaDoneAck)
             }
             OtaPacket::AbortAck => {
                 self.state = OtaProducerState::Done;
@@ -141,6 +146,14 @@ impl OtaProducer {
             self.highest_sent_index = current_index;
         }
         Ok(())
+    }
+
+    pub async fn done_download(
+        &mut self,
+        lora: &mut ModuleLoRa,
+    ) -> Result<GatewayPacket, OtaError> {
+        let resp = lora_transmit_until_response(lora, &OtaPacket::Done, 10).await?;
+        self.process_response(lora, resp).await
     }
 
     pub async fn abort_download(

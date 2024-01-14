@@ -64,13 +64,24 @@ impl OtaConsumer {
         lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
     }
 
-    /* async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
+    async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
+        let block_count = match &self.params {
+            Some(p) => p.block_count,
+            None => {
+                return Err(OtaError::InvalidPacketType);
+            }
+        };
         info!("done download");
-        lora_transmit(lora, &OtaPacket::DoneAck).await
-    } */
+        if self.valid_up_to_index == block_count {
+            lora_transmit(lora, &OtaPacket::DoneAck).await
+        } else {
+            lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
+        }
+    }
 
     async fn handle_abort(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
         info!("abort download");
+        self.params = None;
         lora_transmit(lora, &OtaPacket::AbortAck).await
     }
 
@@ -84,8 +95,8 @@ impl OtaConsumer {
             OtaPacket::Data(data) => self.handle_data(lora, data).await,
             OtaPacket::InitAck => return Err(OtaError::InvalidPacketType),
             OtaPacket::Status(_) => return Err(OtaError::InvalidPacketType),
-            //OtaPacket::Done => self.handle_done(lora).await,
-            //OtaPacket::DoneAck => return Err(OtaError::InvalidPacketType),
+            OtaPacket::Done => self.handle_done(lora).await,
+            OtaPacket::DoneAck => return Err(OtaError::InvalidPacketType),
             OtaPacket::Abort => self.handle_abort(lora).await,
             OtaPacket::AbortAck => return Err(OtaError::InvalidPacketType),
         }
