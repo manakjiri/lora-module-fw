@@ -13,7 +13,7 @@ pub enum OtaError {
     NotStarted,
 }
 
-pub mod err {
+pub(super) mod err {
     pub fn deserialize(_: postcard::Error) -> super::OtaError {
         super::OtaError::Deserialize
     }

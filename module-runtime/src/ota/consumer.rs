@@ -50,10 +50,12 @@ impl OtaConsumer {
         let end = begin + data.data.len();
         self.temp_buffer[begin..end].copy_from_slice(&data.data);
 
-        if self.recent_indexes.is_full() {
-            self.recent_indexes.remove(0);
+        if !self.recent_indexes.contains(&data.index) {
+            if self.recent_indexes.is_full() {
+                self.recent_indexes.remove(0);
+            }
+            let _ = self.recent_indexes.push(data.index);
         }
-        let _ = self.recent_indexes.push(data.index);
 
         let mut tx_buffer = [0u8; 128];
         let packet = OtaStatusPacket {

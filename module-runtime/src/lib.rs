@@ -68,7 +68,6 @@ impl ModuleConfig {
 pub struct ModuleInterface {
     pub lora: ModuleLoRa,
     pub host: ModuleHost,
-    pub crc: crc::Crc<'static>,
 }
 
 pub async fn init(
@@ -116,11 +115,18 @@ pub async fn init(
         .unwrap();
 
     let lora_tx_params = lora
-        .create_tx_packet_params(4, false, true, false, &lora_modulation)
+        .create_tx_packet_params(4, false, false, false, &lora_modulation)
         .unwrap();
 
     let lora_rx_params = lora
-        .create_rx_packet_params(4, false, 128u8, true, false, &lora_modulation)
+        .create_rx_packet_params(
+            4,
+            false,
+            PACKET_LENGTH as u8,
+            false,
+            false,
+            &lora_modulation,
+        )
         .unwrap();
 
     let mut lpuart1_config = usart::Config::default();
@@ -160,8 +166,8 @@ pub async fn init(
             lora_modulation,
             lora_tx_params,
             lora_rx_params,
+            crc,
         },
-        crc,
     }
 }
 
