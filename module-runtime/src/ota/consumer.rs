@@ -6,6 +6,7 @@ use heapless::Vec;
 pub struct OtaConsumer {
     params: Option<OtaInitPacket>,
     recent_indexes: Vec<u16, 32>,
+    valid_up_to_index: u16,
     temp_buffer: [u8; 1024 * 16],
 }
 
@@ -14,6 +15,7 @@ impl OtaConsumer {
         OtaConsumer {
             params: None,
             recent_indexes: Vec::new(),
+            valid_up_to_index: 0,
             temp_buffer: [0u8; 1024 * 16],
         }
     }
@@ -24,8 +26,8 @@ impl OtaConsumer {
         init: OtaInitPacket,
     ) -> Result<(), OtaError> {
         info!("init download");
+        *self = OtaConsumer::new();
         self.params = Some(init);
-        self.recent_indexes.clear();
         lora_transmit(lora, &OtaPacket::InitAck).await
     }
 
@@ -44,21 +46,28 @@ impl OtaConsumer {
         let end = begin + data.data.len();
         self.temp_buffer[begin..end].copy_from_slice(&data.data);
 
+        // update recent_indexes with the new index
         if !self.recent_indexes.contains(&data.index) {
             if self.recent_indexes.is_full() {
                 self.recent_indexes.remove(0);
             }
             let _ = self.recent_indexes.push(data.index);
         }
-
-        lora_transmit(
-            lora,
-            &OtaPacket::Status(OtaStatusPacket {
-                received_indexes: self.recent_indexes.iter().cloned().collect(),
-            }),
-        )
-        .await
+        // update valid_up_to_index
+        for i in self.valid_up_to_index..u16::MAX {
+            if !self.recent_indexes.contains(&i) {
+                break;
+            }
+            self.valid_up_to_index = i;
+        }
+        // send the data ACK
+        lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
     }
+
+    /* async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
+        info!("done download");
+        lora_transmit(lora, &OtaPacket::DoneAck).await
+    } */
 
     async fn handle_abort(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
         info!("abort download");
@@ -75,8 +84,17 @@ impl OtaConsumer {
             OtaPacket::Data(data) => self.handle_data(lora, data).await,
             OtaPacket::InitAck => return Err(OtaError::InvalidPacketType),
             OtaPacket::Status(_) => return Err(OtaError::InvalidPacketType),
+            //OtaPacket::Done => self.handle_done(lora).await,
+            //OtaPacket::DoneAck => return Err(OtaError::InvalidPacketType),
             OtaPacket::Abort => self.handle_abort(lora).await,
             OtaPacket::AbortAck => return Err(OtaError::InvalidPacketType),
+        }
+    }
+
+    fn get_status(&self) -> OtaStatusPacket {
+        OtaStatusPacket {
+            received_indexes: self.recent_indexes.iter().cloned().collect(),
+            valid_up_to_index: self.valid_up_to_index,
         }
     }
 }

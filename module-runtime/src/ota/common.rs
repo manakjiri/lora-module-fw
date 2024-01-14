@@ -57,6 +57,7 @@ pub struct OtaStatusPacket {
     because these ACKs may get lost, by doing this we try to minimize the number
     of redundantly retransmitted data packets */
     pub received_indexes: Vec<u16, 32>,
+    pub valid_up_to_index: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -65,6 +66,8 @@ pub enum OtaPacket {
     InitAck,
     Data(OtaDataPacket),
     Status(OtaStatusPacket),
+    //Done,
+    //DoneAck,
     Abort,
     AbortAck,
 }

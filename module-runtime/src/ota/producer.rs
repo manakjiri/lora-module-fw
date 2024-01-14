@@ -53,9 +53,10 @@ impl OtaProducer {
             }
         }
         info!(
-            "status: pend {}, ack {}",
+            "status: pend {}, ack {}, upto {}",
             self.not_acked_indexes.as_slice(),
-            status.received_indexes.as_slice()
+            status.received_indexes.as_slice(),
+            status.valid_up_to_index
         );
         // all blocks are acked and the last block has been already sent (thus also acked)
         if self.not_acked_indexes.is_empty()
