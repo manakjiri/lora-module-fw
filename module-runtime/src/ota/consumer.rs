@@ -72,7 +72,7 @@ impl OtaConsumer {
             }
         };
         info!("done download");
-        if self.valid_up_to_index == block_count {
+        if self.valid_up_to_index + 1 == block_count {
             lora_transmit(lora, &OtaPacket::DoneAck).await
         } else {
             lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
