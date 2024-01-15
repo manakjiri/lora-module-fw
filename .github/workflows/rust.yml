@@ -1,4 +1,4 @@
-name: Rust
+name: Application builds
 
 on:
   push:
