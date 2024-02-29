@@ -9,7 +9,7 @@ pub trait OtaMemoryDelegate {
 
 pub struct OtaConsumer<MemoryDelegate: OtaMemoryDelegate> {
     params: Option<OtaInitPacket>,
-    memory: MemoryDelegate,
+    pub memory: MemoryDelegate,
     recent_indexes: Vec<u16, 32>,
     valid_up_to_index: u16,
 }
@@ -71,14 +71,11 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
     }
 
     async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
-        let block_count = match &self.params {
-            Some(p) => p.block_count,
-            None => {
-                return Err(OtaError::InvalidPacketType);
-            }
-        };
+        if self.params.is_none() {
+            return Err(OtaError::InvalidPacketType);
+        }
         info!("done download");
-        if self.valid_up_to_index + 1 == block_count {
+        if self.is_done() {
             lora_transmit(lora, &OtaPacket::DoneAck).await
         } else {
             lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
@@ -113,5 +110,15 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
             received_indexes: self.recent_indexes.iter().cloned().collect(),
             valid_up_to_index: self.valid_up_to_index,
         }
+    }
+
+    pub fn is_done(&self) -> bool {
+        let block_count = match &self.params {
+            Some(p) => p.block_count,
+            None => {
+                return false;
+            }
+        };
+        self.valid_up_to_index + 1 == block_count
     }
 }
