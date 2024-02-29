@@ -251,6 +251,7 @@ dependencies = [
 name = "embassy-boot"
 version = "0.1.1"
 dependencies = [
+ "defmt",
  "digest",
  "embassy-embedded-hal",
  "embassy-sync",
@@ -266,6 +267,7 @@ dependencies = [
  "cfg-if",
  "cortex-m",
  "cortex-m-rt",
+ "defmt",
  "embassy-boot",
  "embassy-stm32",
  "embassy-sync",
@@ -728,6 +730,9 @@ dependencies = [
  "cortex-m-rt",
  "defmt",
  "defmt-rtt",
+ "embassy-boot",
+ "embassy-boot-stm32",
+ "embassy-embedded-hal",
  "embassy-executor",
  "embassy-futures",
  "embassy-stm32",

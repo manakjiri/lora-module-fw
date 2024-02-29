@@ -3,20 +3,24 @@ use crate::ota::common::*;
 use defmt::*;
 use heapless::Vec;
 
-pub struct OtaConsumer {
-    params: Option<OtaInitPacket>,
-    recent_indexes: Vec<u16, 32>,
-    valid_up_to_index: u16,
-    temp_buffer: [u8; 1024 * 16],
+pub trait OtaMemoryDelegate {
+    async fn write(&mut self, offset: usize, data: &[u8]) -> bool;
 }
 
-impl OtaConsumer {
-    pub fn new() -> OtaConsumer {
+pub struct OtaConsumer<MemoryDelegate: OtaMemoryDelegate> {
+    params: Option<OtaInitPacket>,
+    memory: MemoryDelegate,
+    recent_indexes: Vec<u16, 32>,
+    valid_up_to_index: u16,
+}
+
+impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
+    pub fn new(memory: MemoryDelegate) -> OtaConsumer<MemoryDelegate> {
         OtaConsumer {
             params: None,
             recent_indexes: Vec::new(),
             valid_up_to_index: 0,
-            temp_buffer: [0u8; 1024 * 16],
+            memory,
         }
     }
 
@@ -26,8 +30,9 @@ impl OtaConsumer {
         init: OtaInitPacket,
     ) -> Result<(), OtaError> {
         info!("init download");
-        *self = OtaConsumer::new();
         self.params = Some(init);
+        self.recent_indexes.clear();
+        self.valid_up_to_index = 0;
         lora_transmit(lora, &OtaPacket::InitAck).await
     }
 
@@ -43,25 +48,26 @@ impl OtaConsumer {
                 return Err(OtaError::InvalidPacketType);
             }
         };
-        let end = begin + data.data.len();
-        self.temp_buffer[begin..end].copy_from_slice(&data.data);
-
-        // update recent_indexes with the new index
-        if !self.recent_indexes.contains(&data.index) {
-            if self.recent_indexes.is_full() {
-                self.recent_indexes.remove(0);
+        if self.memory.write(begin, data.data.as_slice()).await {
+            // update recent_indexes with the new index
+            if !self.recent_indexes.contains(&data.index) {
+                if self.recent_indexes.is_full() {
+                    self.recent_indexes.remove(0);
+                }
+                let _ = self.recent_indexes.push(data.index);
             }
-            let _ = self.recent_indexes.push(data.index);
-        }
-        // update valid_up_to_index
-        for i in self.valid_up_to_index..u16::MAX {
-            if !self.recent_indexes.contains(&i) {
-                break;
+            // update valid_up_to_index
+            for i in self.valid_up_to_index..u16::MAX {
+                if !self.recent_indexes.contains(&i) {
+                    break;
+                }
+                self.valid_up_to_index = i;
             }
-            self.valid_up_to_index = i;
+            // send the data ACK
+            lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
+        } else {
+            Err(OtaError::MemoryWriteFailed)
         }
-        // send the data ACK
-        lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
     }
 
     async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
