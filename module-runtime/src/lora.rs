@@ -1,5 +1,5 @@
 use crate::iv::{Stm32wlInterfaceVariant, SubghzSpiDevice};
-use defmt::info;
+
 use embassy_futures::select::*;
 use embassy_stm32::crc;
 use embassy_stm32::gpio::{AnyPin, Output};
