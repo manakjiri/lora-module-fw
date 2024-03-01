@@ -4,7 +4,7 @@ use defmt::*;
 use heapless::Vec;
 
 pub trait OtaMemoryDelegate {
-    async fn write(&mut self, offset: usize, data: &[u8]) -> bool;
+    async fn write(&mut self, valid_up_to: usize, offset: usize, data: &[u8]) -> bool;
 }
 
 pub struct OtaConsumer<MemoryDelegate: OtaMemoryDelegate> {
@@ -42,13 +42,22 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
         info!("data: index {}", data.index);
-        let begin = match &self.params {
-            Some(p) => (p.block_size * data.index) as usize,
+        let block_size = match &self.params {
+            Some(p) => p.block_size as usize,
             None => {
                 return Err(OtaError::InvalidPacketType);
             }
         };
-        if self.memory.write(begin, data.data.as_slice()).await {
+        let begin = block_size * data.index as usize;
+        if self
+            .memory
+            .write(
+                self.valid_up_to_index as usize * block_size + data.data.len(),
+                begin,
+                data.data.as_slice(),
+            )
+            .await
+        {
             // update recent_indexes with the new index
             if !self.recent_indexes.contains(&data.index) {
                 if self.recent_indexes.is_full() {
@@ -63,11 +72,11 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
                 }
                 self.valid_up_to_index = i;
             }
-            // send the data ACK
-            lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
         } else {
-            Err(OtaError::MemoryWriteFailed)
+            warn!("write failed");
         }
+        // send the data status
+        lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
     }
 
     async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {

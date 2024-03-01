@@ -21,6 +21,7 @@ pub struct OtaData {
 pub struct OtaStatus {
     pub in_progress: bool,
     pub not_acked: Vec<u16, 64>,
+    pub last_acked: u16,
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
