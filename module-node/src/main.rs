@@ -5,7 +5,7 @@
 
 use defmt::*;
 use embassy_executor::Spawner;
-use module_runtime::{heapless::Vec, *};
+use module_runtime::{embassy_time::Timer, heapless::Vec, *};
 
 use embassy_boot_stm32::{AlignedBuffer, FirmwareUpdater, FirmwareUpdaterConfig};
 use embassy_embedded_hal::adapter::BlockingAsync;
@@ -125,13 +125,20 @@ impl OtaMemory {
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    let module = init(ModuleConfig::new(ModuleVersion::Lumia), &spawner).await;
+    let mut module = init(ModuleConfig::new(ModuleVersion::Lumia), &spawner).await;
+    module.set_vdd_enable(true);
     info!("hello from node");
 
     let flash = Mutex::new(BlockingAsync::new(Flash::new_blocking(module.flash)));
     let config = FirmwareUpdaterConfig::from_linkerfile(&flash);
     let mut magic = AlignedBuffer([0; WRITE_SIZE]);
     let mut updater = FirmwareUpdater::new(config, &mut magic.0);
+
+    let mut memory = module.memory;
+    let mut buff = [0u8; 3];
+    Timer::after_millis(100).await;
+    info!("res {:?}", memory.read_jedec_id(&mut buff).await);
+    info!("read {=[u8]:x}", buff);
 
     let mut ota_consumer = OtaConsumer::<OtaMemory>::new(OtaMemory::new());
     let mut lora = module.lora;
