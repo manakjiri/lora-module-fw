@@ -3,20 +3,24 @@ use crate::ota::common::*;
 use defmt::*;
 use heapless::Vec;
 
-pub struct OtaConsumer {
-    params: Option<OtaInitPacket>,
-    recent_indexes: Vec<u16, 32>,
-    valid_up_to_index: u16,
-    temp_buffer: [u8; 1024 * 16],
+pub trait OtaMemoryDelegate {
+    async fn write(&mut self, valid_up_to: usize, offset: usize, data: &[u8]) -> bool;
 }
 
-impl OtaConsumer {
-    pub fn new() -> OtaConsumer {
+pub struct OtaConsumer<MemoryDelegate: OtaMemoryDelegate> {
+    params: Option<OtaInitPacket>,
+    pub memory: MemoryDelegate,
+    recent_indexes: Vec<u16, 32>,
+    valid_up_to_index: u16,
+}
+
+impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
+    pub fn new(memory: MemoryDelegate) -> OtaConsumer<MemoryDelegate> {
         OtaConsumer {
             params: None,
             recent_indexes: Vec::new(),
             valid_up_to_index: 0,
-            temp_buffer: [0u8; 1024 * 16],
+            memory,
         }
     }
 
@@ -26,8 +30,9 @@ impl OtaConsumer {
         init: OtaInitPacket,
     ) -> Result<(), OtaError> {
         info!("init download");
-        *self = OtaConsumer::new();
         self.params = Some(init);
+        self.recent_indexes.clear();
+        self.valid_up_to_index = 0;
         lora_transmit(lora, &OtaPacket::InitAck).await
     }
 
@@ -37,42 +42,49 @@ impl OtaConsumer {
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
         info!("data: index {}", data.index);
-        let begin = match &self.params {
-            Some(p) => (p.block_size * data.index) as usize,
+        let block_size = match &self.params {
+            Some(p) => p.block_size as usize,
             None => {
                 return Err(OtaError::InvalidPacketType);
             }
         };
-        let end = begin + data.data.len();
-        self.temp_buffer[begin..end].copy_from_slice(&data.data);
-
-        // update recent_indexes with the new index
-        if !self.recent_indexes.contains(&data.index) {
-            if self.recent_indexes.is_full() {
-                self.recent_indexes.remove(0);
+        let begin = block_size * data.index as usize;
+        if self
+            .memory
+            .write(
+                self.valid_up_to_index as usize * block_size + data.data.len(),
+                begin,
+                data.data.as_slice(),
+            )
+            .await
+        {
+            // update recent_indexes with the new index
+            if !self.recent_indexes.contains(&data.index) {
+                if self.recent_indexes.is_full() {
+                    self.recent_indexes.remove(0);
+                }
+                let _ = self.recent_indexes.push(data.index);
             }
-            let _ = self.recent_indexes.push(data.index);
-        }
-        // update valid_up_to_index
-        for i in self.valid_up_to_index..u16::MAX {
-            if !self.recent_indexes.contains(&i) {
-                break;
+            // update valid_up_to_index
+            for i in self.valid_up_to_index..u16::MAX {
+                if !self.recent_indexes.contains(&i) {
+                    break;
+                }
+                self.valid_up_to_index = i;
             }
-            self.valid_up_to_index = i;
+        } else {
+            warn!("write failed");
         }
-        // send the data ACK
+        // send the data status
         lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
     }
 
     async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
-        let block_count = match &self.params {
-            Some(p) => p.block_count,
-            None => {
-                return Err(OtaError::InvalidPacketType);
-            }
-        };
+        if self.params.is_none() {
+            return Err(OtaError::InvalidPacketType);
+        }
         info!("done download");
-        if self.valid_up_to_index + 1 == block_count {
+        if self.is_done() {
             lora_transmit(lora, &OtaPacket::DoneAck).await
         } else {
             lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
@@ -107,5 +119,15 @@ impl OtaConsumer {
             received_indexes: self.recent_indexes.iter().cloned().collect(),
             valid_up_to_index: self.valid_up_to_index,
         }
+    }
+
+    pub fn is_done(&self) -> bool {
+        let block_count = match &self.params {
+            Some(p) => p.block_count,
+            None => {
+                return false;
+            }
+        };
+        self.valid_up_to_index + 1 == block_count
     }
 }

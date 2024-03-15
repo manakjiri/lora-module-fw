@@ -103,6 +103,7 @@ impl Gateway {
                         gateway_host_schema::OtaStatus {
                             in_progress: false,
                             not_acked: Vec::new(),
+                            last_acked: 0,
                         }
                     }
                 });

@@ -7,6 +7,9 @@ pub use cortex_m;
 pub use cortex_m_rt;
 pub use defmt;
 pub use defmt_rtt;
+pub use embassy_boot;
+pub use embassy_boot_stm32;
+pub use embassy_embedded_hal;
 pub use embassy_executor;
 pub use embassy_futures;
 pub use embassy_stm32;
@@ -65,9 +68,27 @@ impl ModuleConfig {
     }
 }
 
+/* pub struct ModuleUpdater {
+    flash: Mutex<NoopRawMutex, BlockingAsync<Flash<'static, flash::Blocking>>>,
+    pub updater: FirmwareUpdater<
+        'static,
+        Partition<'static, NoopRawMutex, BlockingAsync<Flash<'static, flash::Blocking>>>,
+        Partition<'static, NoopRawMutex, BlockingAsync<Flash<'static, flash::Blocking>>>,
+    >,
+}
+
+impl ModuleUpdater {
+    fn new(f: embassy_stm32::peripherals::FLASH) -> Self {
+
+
+        ModuleUpdater { flash, updater }
+    }
+} */
+
 pub struct ModuleInterface {
     pub lora: ModuleLoRa,
     pub host: ModuleHost,
+    pub flash: embassy_stm32::peripherals::FLASH,
 }
 
 pub async fn init(
@@ -168,6 +189,7 @@ pub async fn init(
             lora_rx_params,
             crc,
         },
+        flash: p.FLASH,
     }
 }
 

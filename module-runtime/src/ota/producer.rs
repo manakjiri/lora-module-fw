@@ -17,6 +17,7 @@ pub struct OtaProducer {
     data_cache: Vec<OtaDataPacket, 8>,
     not_acked_indexes: Vec<u16, 128>,
     highest_sent_index: u16,
+    last_acked_index: u16,
 }
 
 impl OtaProducer {
@@ -27,6 +28,7 @@ impl OtaProducer {
             data_cache: Vec::new(),
             not_acked_indexes: Vec::new(),
             highest_sent_index: 0,
+            last_acked_index: 0,
         }
     }
 
@@ -38,6 +40,7 @@ impl OtaProducer {
         OtaStatus {
             not_acked: self.not_acked_indexes.iter().cloned().collect(),
             in_progress: self.state == OtaProducerState::Download,
+            last_acked: self.last_acked_index,
         }
     }
 
@@ -52,6 +55,7 @@ impl OtaProducer {
                 self.not_acked_indexes.swap_remove(i);
             }
         }
+        self.last_acked_index = status.valid_up_to_index;
         info!(
             "status: pend {}, ack {}, upto {}",
             self.not_acked_indexes.as_slice(),

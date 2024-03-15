@@ -248,6 +248,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "embassy-boot"
+version = "0.1.1"
+dependencies = [
+ "defmt",
+ "digest",
+ "embassy-embedded-hal",
+ "embassy-sync",
+ "embedded-storage",
+ "embedded-storage-async",
+ "signature",
+]
+
+[[package]]
+name = "embassy-boot-stm32"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt",
+ "embassy-boot",
+ "embassy-stm32",
+ "embassy-sync",
+ "embedded-storage",
+ "embedded-storage-async",
+]
+
+[[package]]
 name = "embassy-embedded-hal"
 version = "0.1.0"
 dependencies = [
@@ -349,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "embassy-sync"
-version = "0.5.0"
+version = "0.4.0"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -361,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "embassy-time"
-version = "0.2.0"
+version = "0.1.5"
 dependencies = [
  "cfg-if",
  "critical-section",
@@ -680,6 +708,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-bootloader"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "cortex-m",
+ "cortex-m-rt",
+ "embassy-boot-stm32",
+ "embassy-stm32",
+ "embassy-sync",
+ "embedded-storage",
+ "embedded-storage-async",
+]
+
+[[package]]
 name = "module-gateway"
 version = "0.1.0"
 dependencies = [
@@ -696,6 +738,9 @@ dependencies = [
  "cortex-m-rt",
  "defmt",
  "defmt-rtt",
+ "embassy-boot",
+ "embassy-boot-stm32",
+ "embassy-embedded-hal",
  "embassy-executor",
  "embassy-futures",
  "embassy-stm32",
@@ -708,6 +753,7 @@ dependencies = [
  "gateway-host-schema",
  "heapless 0.7.17",
  "lora-phy",
+ "module-bootloader",
  "panic-probe",
  "postcard",
  "serde",
@@ -907,6 +953,12 @@ dependencies = [
  "cpufeatures",
  "digest",
 ]
+
+[[package]]
+name = "signature"
+version = "1.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74233d3b3b2f6d4b006dc19dee745e73e2a6bfb6f93607cd3b02bd5b00797d7c"
 
 [[package]]
 name = "spin"

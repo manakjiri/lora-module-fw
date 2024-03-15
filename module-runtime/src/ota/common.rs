@@ -14,6 +14,7 @@ pub enum OtaError {
     InvalidPacketType,
     AlreadyStarted,
     NotStarted,
+    MemoryWriteFailed,
 }
 
 pub(super) mod err {
