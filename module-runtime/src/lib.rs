@@ -40,7 +40,6 @@ use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Delay, Timer};
 use embedded_hal::digital::{OutputPin, PinState};
-use futures::Future;
 use lora_phy::mod_params::*;
 use lora_phy::sx126x::{self, Sx126x, Sx126xVariant, TcxoCtrlVoltage};
 use lora_phy::LoRa;
@@ -94,8 +93,8 @@ pub enum MemoryError {
 
 pub struct ModuleMemory {
     spi: Spi<'static, peripherals::SPI2, peripherals::DMA1_CH5, peripherals::DMA1_CH6>,
-    ncs: Output<'static, AnyPin>,
-    hold: Output<'static, AnyPin>,
+    ncs: Output<'static>,
+    hold: Output<'static>,
 }
 
 impl ModuleMemory {
@@ -164,7 +163,7 @@ pub struct ModuleInterface {
     pub flash: peripherals::FLASH,
     pub memory: ModuleMemory,
 
-    vdd_switch: Output<'static, AnyPin>,
+    vdd_switch: Output<'static>,
 }
 
 impl ModuleInterface {
@@ -199,7 +198,7 @@ pub async fn init(
     });
     let p = embassy_stm32::init(config);
 
-    let mut vdd_switch = Output::new(p.PB2, Level::High, Speed::VeryHigh).degrade();
+    let vdd_switch = Output::new(p.PB2, Level::High, Speed::VeryHigh);
 
     let spi = SubghzSpiDevice(Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH1, p.DMA1_CH2));
     // Set CTRL1 and CTRL3 for high-power transmission, while CTRL2 acts as an RF switch between tx and rx
@@ -279,8 +278,8 @@ pub async fn init(
     let spi = Spi::new(
         p.SPI2, p.PA8, p.PA10, p.PA5, p.DMA1_CH5, p.DMA1_CH6, spi_config,
     );
-    let ncs = Output::new(p.PA12, Level::High, Speed::VeryHigh).degrade();
-    let hold = Output::new(p.PC14, Level::High, Speed::Low).degrade();
+    let ncs = Output::new(p.PA12, Level::High, Speed::VeryHigh);
+    let hold = Output::new(p.PC14, Level::High, Speed::Low);
 
     spawner.spawn(status_led_task(led)).unwrap();
 
