@@ -2,12 +2,12 @@ use crate::iv::{Stm32wlInterfaceVariant, SubghzSpiDevice};
 
 use embassy_futures::select::*;
 use embassy_stm32::crc;
-use embassy_stm32::gpio::{AnyPin, Output};
+use embassy_stm32::gpio::Output;
 use embassy_stm32::peripherals;
 use embassy_stm32::spi::Spi;
 use embassy_time::{Delay, Timer};
 use lora_phy::mod_params::*;
-use lora_phy::sx1261_2::SX1261_2;
+use lora_phy::sx126x::Sx126x;
 use lora_phy::LoRa;
 
 pub const PACKET_LENGTH: usize = 128;
@@ -16,11 +16,11 @@ pub const PAYLOAD_LENGTH: usize = PACKET_LENGTH - CHECKSUM_LENGTH;
 
 pub struct ModuleLoRa {
     pub lora: LoRa<
-        SX1261_2<
+        Sx126x<
             SubghzSpiDevice<
                 Spi<'static, peripherals::SUBGHZSPI, peripherals::DMA1_CH1, peripherals::DMA1_CH2>,
             >,
-            Stm32wlInterfaceVariant<Output<'static, AnyPin>>,
+            Stm32wlInterfaceVariant<Output<'static>>,
         >,
         Delay,
     >,
@@ -55,7 +55,7 @@ impl ModuleLoRa {
     }
 
     pub async fn receive_continuous(&mut self, rx_buffer: &mut [u8]) -> Result<usize, RadioError> {
-        self.receive(rx_buffer, None).await
+        self.receive(rx_buffer).await
     }
 
     pub async fn receive_single(&mut self, rx_buffer: &mut [u8]) -> Result<usize, RadioError> {
@@ -65,17 +65,12 @@ impl ModuleLoRa {
         }
     }
 
-    async fn receive(
-        &mut self,
-        rx_buffer: &mut [u8],
-        window_in_secs: Option<u8>,
-    ) -> Result<usize, RadioError> {
+    async fn receive(&mut self, rx_buffer: &mut [u8]) -> Result<usize, RadioError> {
         self.lora
             .prepare_for_rx(
+                RxMode::Continuous,
                 &self.lora_modulation,
                 &self.lora_rx_params,
-                window_in_secs,
-                None,
                 false,
             )
             .await?;
@@ -92,10 +87,10 @@ impl ModuleLoRa {
                     if self.crc.feed_bytes(payload) == u32::from_le_bytes(checksum) {
                         Ok(len)
                     } else {
-                        Err(RadioError::CRCErrorOnReceive)
+                        Err(RadioError::Busy) //FIXME
                     }
                 } else {
-                    Err(RadioError::HeaderError)
+                    Err(RadioError::Busy) //FIXME
                 }
             }
             Err(err) => Err(err),

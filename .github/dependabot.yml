@@ -19,6 +19,11 @@ updates:
     directory: /module-runtime
     schedule:
       interval: daily
+
+  - package-ecosystem: cargo
+    directory: /module-bootloader
+    schedule:
+      interval: daily
   
   - package-ecosystem: github-actions
     directory: /
