@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [gateway, node]
+        module: [gateway, node, bootloader]
 
     name: Build module-${{matrix.module}}
     runs-on: ubuntu-latest
