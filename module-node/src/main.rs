@@ -2,6 +2,7 @@
 #![no_std]
 #![macro_use]
 #![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
 
 use defmt::*;
 use embassy_executor::Spawner;
@@ -130,7 +131,7 @@ async fn main(spawner: Spawner) {
     info!("hello from node");
 
     let flash = Mutex::new(BlockingAsync::new(Flash::new_blocking(module.flash)));
-    let config = FirmwareUpdaterConfig::from_linkerfile(&flash);
+    let config = FirmwareUpdaterConfig::from_linkerfile(&flash, &flash);
     let mut magic = AlignedBuffer([0; WRITE_SIZE]);
     let mut updater = FirmwareUpdater::new(config, &mut magic.0);
 
