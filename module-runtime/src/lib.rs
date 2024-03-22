@@ -1,6 +1,7 @@
 #![no_std]
 #![macro_use]
 #![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
 #![allow(stable_features, unknown_lints, async_fn_in_trait, dead_code)]
 
 pub use cortex_m;
@@ -37,9 +38,9 @@ use embassy_stm32::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Delay, Timer};
-use lora_phy::sx1261_2::{Sx126xVariant, TcxoCtrlVoltage, SX1261_2};
+use lora_phy::mod_params::*;
+use lora_phy::sx126x::{self, Sx126x, Sx126xVariant, TcxoCtrlVoltage};
 use lora_phy::LoRa;
-use lora_phy::{mod_params::*, sx1261_2};
 
 mod host;
 mod iv;
@@ -101,7 +102,7 @@ pub async fn init(
         mode: HseMode::Bypass,
         prescaler: HsePrescaler::DIV1,
     });
-    config.rcc.mux = ClockSrc::PLL1_R;
+    config.rcc.sys = Sysclk::PLL1_R;
     config.rcc.pll = Some(Pll {
         source: PllSource::HSE,
         prediv: PllPreDiv::DIV2,
@@ -115,14 +116,14 @@ pub async fn init(
     let spi = SubghzSpiDevice(Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH1, p.DMA1_CH2));
     // Set CTRL1 and CTRL3 for high-power transmission, while CTRL2 acts as an RF switch between tx and rx
     let ctrl2 = Output::new(p.PC5.degrade(), Level::High, Speed::High);
-    let config = sx1261_2::Config {
+    let config = sx126x::Config {
         chip: Sx126xVariant::Stm32wl,
         tcxo_ctrl: Some(TcxoCtrlVoltage::Ctrl1V7),
         use_dcdc: true,
         use_dio2_as_rfswitch: true,
     };
     let iv = Stm32wlInterfaceVariant::new(Irqs, None, Some(ctrl2)).unwrap();
-    let mut lora = LoRa::new(SX1261_2::new(spi, iv, config), false, Delay)
+    let mut lora = LoRa::new(Sx126x::new(spi, iv, config), false, Delay)
         .await
         .unwrap();
 
@@ -164,18 +165,23 @@ pub async fn init(
     .unwrap();
 
     let led = match module_config.version {
-        ModuleVersion::NucleoWL55JC => Output::new(p.PB15, Level::High, Speed::Low).degrade(),
-        ModuleVersion::Lumia => Output::new(p.PC13, Level::High, Speed::Low).degrade(),
+        ModuleVersion::NucleoWL55JC => p.PB15.degrade(),
+        ModuleVersion::Lumia => p.PC13.degrade(),
     };
 
     let crc = Crc::new(
         p.CRC,
         // same as https://nicoretti.github.io/crc/api/crc32/
-        match crc::Config::new(crc::InputReverseConfig::Byte, true, 4294967295) {
+        match crc::Config::new(
+            crc::InputReverseConfig::Byte,
+            true,
+            crc::PolySize::Width32,
+            4294967295,
+            79764919,
+        ) {
             Ok(c) => c,
             Err(_) => unreachable!("CRC config is invalid"),
         },
-        //TODO crc::Config::new(crc::InputReverseConfig::None, false, 0).unwrap(),
     );
 
     spawner.spawn(status_led_task(led)).unwrap();
@@ -204,8 +210,8 @@ pub async fn status_led(cmd: LedCommand) {
 }
 
 #[embassy_executor::task]
-async fn status_led_task(mut led: Output<'static, AnyPin>) {
-    //let mut led = Output::new(pin, Level::Low, Speed::Low);
+async fn status_led_task(led: AnyPin) {
+    let mut led = Output::new(led, Level::Low, Speed::Low);
     led.set_low();
     loop {
         match STATUS_LED.receive().await {
