@@ -14,6 +14,7 @@ pub use embassy_embedded_hal;
 pub use embassy_executor;
 pub use embassy_futures;
 pub use embassy_stm32;
+use embassy_stm32::rcc::mux::ClockMux;
 pub use embassy_sync;
 pub use embassy_time;
 pub use futures;
@@ -188,6 +189,7 @@ pub async fn init(
         prescaler: HsePrescaler::DIV1,
     });
     config.rcc.sys = Sysclk::PLL1_R;
+    //config.rcc.mux = mux::
     config.rcc.pll = Some(Pll {
         source: PllSource::HSE,
         prediv: PllPreDiv::DIV2,
@@ -198,11 +200,11 @@ pub async fn init(
     });
     let p = embassy_stm32::init(config);
 
-    let vdd_switch = Output::new(p.PB2, Level::High, Speed::VeryHigh);
+    let vdd_switch = Output::new(p.PB2, Level::High, Speed::Low);
 
     let spi = SubghzSpiDevice(Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH1, p.DMA1_CH2));
     // Set CTRL1 and CTRL3 for high-power transmission, while CTRL2 acts as an RF switch between tx and rx
-    let ctrl2 = Output::new(p.PC5.degrade(), Level::High, Speed::High);
+    let ctrl2 = Output::new(p.PA9.degrade(), Level::High, Speed::High);
     let config = sx126x::Config {
         chip: Sx126xVariant::Stm32wl,
         tcxo_ctrl: Some(TcxoCtrlVoltage::Ctrl1V7),
