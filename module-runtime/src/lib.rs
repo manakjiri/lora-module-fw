@@ -203,13 +203,21 @@ pub async fn init(
     let vdd_switch = Output::new(p.PB2, Level::High, Speed::Low);
 
     let spi = SubghzSpiDevice(Spi::new_subghz(p.SUBGHZSPI, p.DMA1_CH1, p.DMA1_CH2));
+    let ctrl2 = match module_config.version {
+        ModuleVersion::Lumia => p.PA9.degrade(),
+        ModuleVersion::NucleoWL55JC => {
+            core::mem::forget(Output::new(p.PC4.degrade(), Level::High, Speed::Low)); //ctrl1
+            core::mem::forget(Output::new(p.PC3.degrade(), Level::High, Speed::Low)); //ctrl3
+            p.PC5.degrade()
+        }
+    };
     // Set CTRL1 and CTRL3 for high-power transmission, while CTRL2 acts as an RF switch between tx and rx
-    let ctrl2 = Output::new(p.PA9.degrade(), Level::High, Speed::High);
+    let ctrl2 = Output::new(ctrl2, Level::Low, Speed::High);
     let config = sx126x::Config {
         chip: Sx126xVariant::Stm32wl,
         tcxo_ctrl: Some(TcxoCtrlVoltage::Ctrl1V7),
         use_dcdc: true,
-        use_dio2_as_rfswitch: true,
+        use_dio2_as_rfswitch: false,
     };
     let iv = Stm32wlInterfaceVariant::new(Irqs, None, Some(ctrl2)).unwrap();
     let mut lora = LoRa::new(Sx126x::new(spi, iv, config), false, Delay)

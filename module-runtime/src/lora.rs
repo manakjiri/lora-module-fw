@@ -36,7 +36,7 @@ impl ModuleLoRa {
             return Err(RadioError::PayloadSizeUnexpected(tx_buffer.len()));
         }
         self.lora
-            .prepare_for_tx(&self.lora_modulation, 14, false)
+            .prepare_for_tx(&self.lora_modulation, 15, false)
             .await?;
         //info!("TX len {}", tx_buffer.len());
         let mut buff = [0u8; PACKET_LENGTH];
