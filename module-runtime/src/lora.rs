@@ -1,5 +1,6 @@
 use crate::iv::{Stm32wlInterfaceVariant, SubghzSpiDevice};
 
+use defmt::info;
 use embassy_futures::select::*;
 use embassy_stm32::crc;
 use embassy_stm32::gpio::Output;
@@ -33,8 +34,6 @@ pub struct ModuleLoRa {
         Delay,
     >,
     pub lora_modulation: ModulationParams,
-    pub lora_tx_params: PacketParams,
-    pub lora_rx_params: PacketParams,
     pub crc: crc::Crc<'static>,
     pub address: usize,
 }
@@ -92,17 +91,21 @@ impl ModuleLoRa {
         buff[len..len + CHECKSUM_LENGTH].copy_from_slice(&checksum);
 
         /* prepare for transmit */
+        let mut lora_tx_params = self
+            .lora
+            .create_tx_packet_params(4, false, false, false, &self.lora_modulation)
+            .unwrap();
         self.lora
             .prepare_for_tx(&self.lora_modulation, 15, false)
             .await?;
-        //info!("TX len {}", len);
+        info!("TX len {}", len + CHECKSUM_LENGTH);
         /* transmit the packet */
         self.lora
             .tx(
                 &self.lora_modulation,
-                &mut self.lora_tx_params,
+                &mut lora_tx_params,
                 &buff[..len + CHECKSUM_LENGTH],
-                10_000, // is the timeout broken? https://www.thethingsnetwork.org/airtime-calculator
+                100_000, // is the timeout broken? https://www.thethingsnetwork.org/airtime-calculator
             )
             .await
     }
@@ -112,7 +115,7 @@ impl ModuleLoRa {
     }
 
     pub async fn receive_single(&mut self) -> Result<LoRaPacket, RadioError> {
-        match select(self.receive_continuous(), Timer::after_secs(1)).await {
+        match select(self.receive_continuous(), Timer::after_secs(5)).await {
             Either::First(r) => r,
             Either::Second(_) => Err(RadioError::ReceiveTimeout),
         }
@@ -134,19 +137,30 @@ impl ModuleLoRa {
     }
 
     async fn receive(&mut self) -> Result<LoRaPacket, RadioError> {
+        let lora_rx_params = self
+            .lora
+            .create_rx_packet_params(
+                4,
+                false,
+                PACKET_LENGTH as u8,
+                false,
+                false,
+                &self.lora_modulation,
+            )
+            .unwrap();
         self.lora
             .prepare_for_rx(
                 RxMode::Continuous,
                 &self.lora_modulation,
-                &self.lora_rx_params,
+                &lora_rx_params,
                 false,
             )
             .await?;
         let mut buff = [0u8; PACKET_LENGTH];
-        match self.lora.rx(&self.lora_rx_params, &mut buff).await {
+        match self.lora.rx(&lora_rx_params, &mut buff).await {
             Ok((received_len, _status)) => {
                 let len = received_len as usize;
-                //info!("RX rssi {} len {}", _status.rssi, received_len);
+                info!("RX rssi {} len {}", _status.rssi, received_len);
                 if len > CHECKSUM_LENGTH + HEADER_LENGTH {
                     let payload = &buff[..len - CHECKSUM_LENGTH];
                     let checksum = &buff[len - CHECKSUM_LENGTH..len];
