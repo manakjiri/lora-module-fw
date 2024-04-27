@@ -293,6 +293,8 @@ pub async fn init(
 
     spawner.spawn(status_led_task(led)).unwrap();
 
+    let memory = ModuleMemory { spi, ncs, hold };
+
     ModuleInterface {
         host: ModuleHost { uart: lpuart1 },
         lora: ModuleLoRa {
@@ -301,9 +303,10 @@ pub async fn init(
             lora_tx_params,
             lora_rx_params,
             crc,
+            address: 2,
         },
         flash: p.FLASH,
-        memory: ModuleMemory { spi, ncs, hold },
+        memory,
         vdd_switch,
     }
 }

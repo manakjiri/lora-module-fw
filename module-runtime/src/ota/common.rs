@@ -76,39 +76,46 @@ pub enum OtaPacket {
 
 pub(super) async fn lora_transmit(
     lora: &mut ModuleLoRa,
+    destination: usize,
     packet: &OtaPacket,
 ) -> Result<(), OtaError> {
-    let mut tx_buffer = [0u8; PAYLOAD_LENGTH];
-    let s = postcard::to_slice(packet, &mut tx_buffer).map_err(err::serialize)?;
-    lora.transmit(&s).await.map_err(err::transmit)
+    let mut p = LoRaPacket::new(destination);
+    p.payload = postcard::to_vec(packet).map_err(err::serialize)?;
+    lora.transmit(&mut p).await.map_err(err::transmit)
 }
 
 pub(super) async fn lora_transmit_until_response(
     lora: &mut ModuleLoRa,
+    destination: usize,
     packet: &OtaPacket,
     retries: usize,
 ) -> Result<OtaPacket, OtaError> {
-    let mut tx_buffer = [0u8; PAYLOAD_LENGTH];
-    let packet = postcard::to_slice(packet, &mut tx_buffer).map_err(err::serialize)?;
+    /* serialize the packet */
+    let mut p = LoRaPacket::new(destination);
+    p.payload = postcard::to_vec(packet).map_err(err::serialize)?;
+    /* loop until we reach retries or get an error */
     let mut last_error: Option<OtaError> = None;
     for _ in 0..retries {
-        let mut rx_buffer = [0u8; PAYLOAD_LENGTH];
-        lora.transmit(&packet).await.map_err(err::transmit)?;
-        match lora.receive_single(&mut rx_buffer).await {
-            Ok(len) => match postcard::from_bytes::<OtaPacket>(&rx_buffer[..len])
-                .map_err(err::deserialize)
-            {
-                Ok(ret) => return Ok(ret),
-                Err(e) => {
-                    warn!("{}", e);
-                    last_error = Some(e);
+        /* transmit the packet */
+        lora.transmit(&mut p).await.map_err(err::transmit)?;
+        /* listen for response (with timeout) */
+        match lora.receive_single().await {
+            Ok(packet) => {
+                /* parse response */
+                match postcard::from_bytes::<OtaPacket>(&packet.payload).map_err(err::deserialize) {
+                    Ok(ret) => return Ok(ret),
+                    Err(e) => {
+                        warn!("{}", e);
+                        last_error = Some(e);
+                    }
                 }
-            },
+            }
             Err(e) => {
                 warn!("{}", e);
                 last_error = Some(err::receive(e));
             }
         }
+        /* a bit of a hold-off to not spam the air */
         Timer::after_millis(100).await;
     }
     Err(last_error.unwrap())

@@ -7,8 +7,13 @@ pub trait OtaMemoryDelegate {
     async fn write(&mut self, valid_up_to: usize, offset: usize, data: &[u8]) -> bool;
 }
 
+pub struct SessionParams {
+    params: OtaInitPacket,
+    source_address: usize,
+}
+
 pub struct OtaConsumer<MemoryDelegate: OtaMemoryDelegate> {
-    params: Option<OtaInitPacket>,
+    session: Option<SessionParams>,
     pub memory: MemoryDelegate,
     recent_indexes: Vec<u16, 32>,
     valid_up_to_index: u16,
@@ -17,7 +22,7 @@ pub struct OtaConsumer<MemoryDelegate: OtaMemoryDelegate> {
 impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
     pub fn new(memory: MemoryDelegate) -> OtaConsumer<MemoryDelegate> {
         OtaConsumer {
-            params: None,
+            session: None,
             recent_indexes: Vec::new(),
             valid_up_to_index: 0,
             memory,
@@ -27,13 +32,14 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
     async fn handle_init(
         &mut self,
         lora: &mut ModuleLoRa,
-        init: OtaInitPacket,
+        session: SessionParams,
     ) -> Result<(), OtaError> {
         info!("init download");
-        self.params = Some(init);
+        let source = session.source_address;
+        self.session = Some(session);
         self.recent_indexes.clear();
         self.valid_up_to_index = 0;
-        lora_transmit(lora, &OtaPacket::InitAck).await
+        lora_transmit(lora, source, &OtaPacket::InitAck).await
     }
 
     async fn handle_data(
@@ -42,12 +48,13 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
         data: OtaDataPacket,
     ) -> Result<(), OtaError> {
         info!("data: index {}", data.index);
-        let block_size = match &self.params {
-            Some(p) => p.block_size as usize,
+        let session = match &self.session {
+            Some(p) => p,
             None => {
                 return Err(OtaError::InvalidPacketType);
             }
         };
+        let block_size = session.params.block_size as usize;
         let begin = block_size * data.index as usize;
         if self
             .memory
@@ -76,40 +83,66 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
             warn!("write failed");
         }
         // send the data status
-        lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
+        lora_transmit(
+            lora,
+            session.source_address,
+            &OtaPacket::Status(self.get_status()),
+        )
+        .await
     }
 
     async fn handle_done(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
-        if self.params.is_none() {
-            return Err(OtaError::InvalidPacketType);
-        }
+        let session = match &self.session {
+            Some(p) => p,
+            None => {
+                return Err(OtaError::InvalidPacketType);
+            }
+        };
         info!("done download");
         if self.is_done() {
-            lora_transmit(lora, &OtaPacket::DoneAck).await
+            lora_transmit(lora, session.source_address, &OtaPacket::DoneAck).await
         } else {
-            lora_transmit(lora, &OtaPacket::Status(self.get_status())).await
+            lora_transmit(
+                lora,
+                session.source_address,
+                &OtaPacket::Status(self.get_status()),
+            )
+            .await
         }
     }
 
-    async fn handle_abort(&mut self, lora: &mut ModuleLoRa) -> Result<(), OtaError> {
+    async fn handle_abort(
+        &mut self,
+        lora: &mut ModuleLoRa,
+        source_address: usize,
+    ) -> Result<(), OtaError> {
         info!("abort download");
-        self.params = None;
-        lora_transmit(lora, &OtaPacket::AbortAck).await
+        self.session = None;
+        lora_transmit(lora, source_address, &OtaPacket::AbortAck).await
     }
 
     pub async fn process_message(
         &mut self,
         lora: &mut ModuleLoRa,
-        message: &[u8],
+        packet: LoRaPacket,
     ) -> Result<(), OtaError> {
-        match postcard::from_bytes::<OtaPacket>(message).map_err(err::deserialize)? {
-            OtaPacket::Init(init) => self.handle_init(lora, init).await,
+        match postcard::from_bytes::<OtaPacket>(&packet.payload).map_err(err::deserialize)? {
+            OtaPacket::Init(init) => {
+                self.handle_init(
+                    lora,
+                    SessionParams {
+                        params: init,
+                        source_address: packet.source,
+                    },
+                )
+                .await
+            }
             OtaPacket::Data(data) => self.handle_data(lora, data).await,
             OtaPacket::InitAck => return Err(OtaError::InvalidPacketType),
             OtaPacket::Status(_) => return Err(OtaError::InvalidPacketType),
             OtaPacket::Done => self.handle_done(lora).await,
             OtaPacket::DoneAck => return Err(OtaError::InvalidPacketType),
-            OtaPacket::Abort => self.handle_abort(lora).await,
+            OtaPacket::Abort => self.handle_abort(lora, packet.source).await,
             OtaPacket::AbortAck => return Err(OtaError::InvalidPacketType),
         }
     }
@@ -122,8 +155,8 @@ impl<MemoryDelegate: OtaMemoryDelegate> OtaConsumer<MemoryDelegate> {
     }
 
     pub fn is_done(&self) -> bool {
-        let block_count = match &self.params {
-            Some(p) => p.block_count,
+        let block_count = match &self.session {
+            Some(p) => p.params.block_count,
             None => {
                 return false;
             }

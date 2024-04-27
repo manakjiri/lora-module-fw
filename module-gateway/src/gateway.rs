@@ -21,12 +21,15 @@ impl Gateway {
         lora: &mut ModuleLoRa,
         init: gateway_host_schema::OtaInitRequest,
     ) -> Result<GatewayPacket, Error> {
-        let mut ota = OtaProducer::new(OtaInitPacket {
-            binary_size: init.binary_size,
-            block_size: init.block_size,
-            block_count: init.block_count,
-            binary_sha256: init.binary_sha256,
-        });
+        let mut ota = OtaProducer::new(
+            OtaInitPacket {
+                binary_size: init.binary_size,
+                block_size: init.block_size,
+                block_count: init.block_count,
+                binary_sha256: init.binary_sha256,
+            },
+            init.destination_address,
+        );
         let ret = ota.init_download(lora).await.map_err(Error::Ota)?;
         self.ota = Some(ota);
         Ok(ret)
@@ -116,11 +119,11 @@ impl Gateway {
     pub async fn process_peer_message(
         &mut self,
         lora: &mut ModuleLoRa,
-        lora_buffer: &[u8],
+        packet: LoRaPacket,
     ) -> Result<Option<GatewayPacket>, Error> {
         match self.ota.as_mut() {
             Some(ota) => Ok(Some(
-                ota.process_response_raw(lora, lora_buffer)
+                ota.process_response_raw(lora, packet)
                     .await
                     .map_err(Error::Ota)?,
             )),
