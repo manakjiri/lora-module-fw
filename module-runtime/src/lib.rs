@@ -14,7 +14,6 @@ pub use embassy_embedded_hal;
 pub use embassy_executor;
 pub use embassy_futures;
 pub use embassy_stm32;
-use embassy_stm32::rcc::mux::ClockMux;
 pub use embassy_sync;
 pub use embassy_time;
 pub use futures;
@@ -288,7 +287,7 @@ pub async fn init(
             crc,
             address: match module_config.version {
                 ModuleVersion::NucleoWL55JC => 1,
-                ModuleVersion::Lumia => 2,
+                ModuleVersion::Lumia => 3,
             },
         },
         flash: p.FLASH,
