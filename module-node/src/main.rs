@@ -128,7 +128,7 @@ impl OtaMemory {
 async fn main(spawner: Spawner) {
     let mut module = init(ModuleConfig::new(ModuleVersion::Lumia), &spawner).await;
     //module.set_vdd_enable(true);
-    info!("hello from node");
+    info!("hello from node {}", module.lora.address);
 
     let flash = Mutex::new(BlockingAsync::new(Flash::new_blocking(module.flash)));
     let config = FirmwareUpdaterConfig::from_linkerfile(&flash, &flash);
@@ -143,13 +143,9 @@ async fn main(spawner: Spawner) {
 
     let mut ota_consumer = OtaConsumer::<OtaMemory>::new(OtaMemory::new());
     let mut lora = module.lora;
-    let mut rx_buffer = [0u8; 128];
     loop {
-        match lora.receive_continuous(rx_buffer.as_mut()).await {
-            Ok(len) => match ota_consumer
-                .process_message(&mut lora, &rx_buffer[..len])
-                .await
-            {
+        match lora.receive_continuous().await {
+            Ok(p) => match ota_consumer.process_message(&mut lora, p).await {
                 Ok(()) => {}
                 Err(e) => {
                     error!("ota error: {}", e)
@@ -161,7 +157,8 @@ async fn main(spawner: Spawner) {
         }
         status_led(LedCommand::FlashShort).await;
 
-        if let Some(page) = ota_consumer.memory.get_page() {
+        // disabled for testing the range
+        /* if let Some(page) = ota_consumer.memory.get_page() {
             info!("Writing page at 0x{:x}", page.address);
             updater
                 .write_firmware(page.address, &page.buffer)
@@ -180,6 +177,6 @@ async fn main(spawner: Spawner) {
             updater.mark_updated().await.unwrap();
             info!("Marked as updated");
             cortex_m::peripheral::SCB::sys_reset();
-        }
+        } */
     }
 }

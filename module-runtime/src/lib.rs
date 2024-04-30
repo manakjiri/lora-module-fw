@@ -14,7 +14,6 @@ pub use embassy_embedded_hal;
 pub use embassy_executor;
 pub use embassy_futures;
 pub use embassy_stm32;
-use embassy_stm32::rcc::mux::ClockMux;
 pub use embassy_sync;
 pub use embassy_time;
 pub use futures;
@@ -206,8 +205,8 @@ pub async fn init(
     let ctrl2 = match module_config.version {
         ModuleVersion::Lumia => p.PA9.degrade(),
         ModuleVersion::NucleoWL55JC => {
-            core::mem::forget(Output::new(p.PC4.degrade(), Level::High, Speed::Low)); //ctrl1
-            core::mem::forget(Output::new(p.PC3.degrade(), Level::High, Speed::Low)); //ctrl3
+            core::mem::forget(Output::new(p.PC4.degrade(), Level::High, Speed::High)); //ctrl1 !high power
+            core::mem::forget(Output::new(p.PC3.degrade(), Level::High, Speed::High)); //ctrl3 always high
             p.PC5.degrade()
         }
     };
@@ -228,23 +227,8 @@ pub async fn init(
         .create_modulation_params(
             SpreadingFactor::_5,
             Bandwidth::_250KHz,
-            CodingRate::_4_7,
+            CodingRate::_4_8,
             LORA_FREQUENCY_IN_HZ,
-        )
-        .unwrap();
-
-    let lora_tx_params = lora
-        .create_tx_packet_params(4, false, false, false, &lora_modulation)
-        .unwrap();
-
-    let lora_rx_params = lora
-        .create_rx_packet_params(
-            4,
-            false,
-            PACKET_LENGTH as u8,
-            false,
-            false,
-            &lora_modulation,
         )
         .unwrap();
 
@@ -293,17 +277,21 @@ pub async fn init(
 
     spawner.spawn(status_led_task(led)).unwrap();
 
+    let memory = ModuleMemory { spi, ncs, hold };
+
     ModuleInterface {
         host: ModuleHost { uart: lpuart1 },
         lora: ModuleLoRa {
             lora,
             lora_modulation,
-            lora_tx_params,
-            lora_rx_params,
             crc,
+            address: match module_config.version {
+                ModuleVersion::NucleoWL55JC => 1,
+                ModuleVersion::Lumia => 3,
+            },
         },
         flash: p.FLASH,
-        memory: ModuleMemory { spi, ncs, hold },
+        memory,
         vdd_switch,
     }
 }

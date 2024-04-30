@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct OtaInitRequest {
+    pub destination_address: usize,
     pub binary_size: u32,
     pub binary_sha256: [u8; 32],
     pub block_size: u16,

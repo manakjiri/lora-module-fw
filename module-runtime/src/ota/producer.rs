@@ -13,6 +13,7 @@ pub enum OtaProducerState {
 
 pub struct OtaProducer {
     params: OtaInitPacket,
+    destination_address: usize,
     state: OtaProducerState,
     data_cache: Vec<OtaDataPacket, 8>,
     not_acked_indexes: Vec<u16, 128>,
@@ -21,9 +22,10 @@ pub struct OtaProducer {
 }
 
 impl OtaProducer {
-    pub fn new(params: OtaInitPacket) -> OtaProducer {
+    pub fn new(params: OtaInitPacket, destination_address: usize) -> OtaProducer {
         OtaProducer {
             params,
+            destination_address,
             state: OtaProducerState::Init,
             data_cache: Vec::new(),
             not_acked_indexes: Vec::new(),
@@ -115,11 +117,11 @@ impl OtaProducer {
     pub async fn process_response_raw(
         &mut self,
         lora: &mut ModuleLoRa,
-        packet: &[u8],
+        packet: LoRaPacket,
     ) -> Result<GatewayPacket, OtaError> {
         self.process_response(
             lora,
-            postcard::from_bytes::<OtaPacket>(packet).map_err(err::deserialize)?,
+            postcard::from_bytes::<OtaPacket>(&packet.payload).map_err(err::deserialize)?,
         )
         .await
     }
@@ -129,7 +131,8 @@ impl OtaProducer {
         lora: &mut ModuleLoRa,
     ) -> Result<GatewayPacket, OtaError> {
         let packet = OtaPacket::Init(self.params.clone());
-        let resp = lora_transmit_until_response(lora, &packet, 10).await?;
+        let resp =
+            lora_transmit_until_response(lora, self.destination_address, &packet, 10).await?;
         self.process_response(lora, resp).await
     }
 
@@ -140,7 +143,7 @@ impl OtaProducer {
     ) -> Result<(), OtaError> {
         let current_index = data.index;
         info!("data: index {}", data.index);
-        lora_transmit(lora, &OtaPacket::Data(data)).await?;
+        lora_transmit(lora, self.destination_address, &OtaPacket::Data(data)).await?;
 
         if !self.not_acked_indexes.contains(&current_index) {
             //TODO handle the case where this would overflow - we have too many unACKED, need to throttle transmit
@@ -156,7 +159,9 @@ impl OtaProducer {
         &mut self,
         lora: &mut ModuleLoRa,
     ) -> Result<GatewayPacket, OtaError> {
-        let resp = lora_transmit_until_response(lora, &OtaPacket::Done, 10).await?;
+        let resp =
+            lora_transmit_until_response(lora, self.destination_address, &OtaPacket::Done, 10)
+                .await?;
         self.process_response(lora, resp).await
     }
 
@@ -164,7 +169,9 @@ impl OtaProducer {
         &mut self,
         lora: &mut ModuleLoRa,
     ) -> Result<GatewayPacket, OtaError> {
-        let resp = lora_transmit_until_response(lora, &OtaPacket::Abort, 10).await?;
+        let resp =
+            lora_transmit_until_response(lora, self.destination_address, &OtaPacket::Abort, 10)
+                .await?;
         self.process_response(lora, resp).await
     }
 }
