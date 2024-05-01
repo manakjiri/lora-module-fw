@@ -11,7 +11,7 @@ test = false
 bench = false
 
 [dependencies]
-module-runtime = { path = "../module-runtime" }
+module-runtime = { path = "../module-runtime", features = ["host_interface"] }
 embassy-executor = { path = "../external/embassy/embassy-executor" }
 
 [profile.release]

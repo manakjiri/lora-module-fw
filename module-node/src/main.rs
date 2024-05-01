@@ -4,15 +4,19 @@
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 
-use defmt::*;
-use embassy_executor::Spawner;
-use module_runtime::{embassy_time::Timer, heapless::Vec, *};
+mod soil_sensor;
 
+use defmt::*;
 use embassy_boot_stm32::{AlignedBuffer, FirmwareUpdater, FirmwareUpdaterConfig};
 use embassy_embedded_hal::adapter::BlockingAsync;
+use embassy_executor::Spawner;
 use embassy_stm32::flash::{Flash, WRITE_SIZE};
 use embassy_sync::mutex::Mutex;
 use heapless::FnvIndexMap;
+use heapless::Vec;
+use module_runtime::embassy_time::Timer;
+use module_runtime::{embassy_stm32::exti::Channel, *};
+use soil_sensor::{SoilSensor, SoilSensorResult};
 
 const PAGE_SIZE: usize = 2048;
 
@@ -124,16 +128,44 @@ impl OtaMemory {
     }
 }
 
+#[embassy_executor::task]
+async fn measure(mut sensor: SoilSensor<'static>) {
+    loop {
+        info!("{}", sensor.sample_all().await);
+            /* SoilSensorResult::Timeout => {
+                warn!("timeout");
+            }
+            SoilSensorResult::Ok(val) => {
+                info!("{:?} us", val.as_micros());
+            } */
+        
+        Timer::after_millis(100).await;
+    }
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let mut module = init(ModuleConfig::new(ModuleVersion::Lumia), &spawner).await;
-    //module.set_vdd_enable(true);
+    module.set_vdd_enable(true);
     info!("hello from node {}", module.lora.address);
 
     let flash = Mutex::new(BlockingAsync::new(Flash::new_blocking(module.flash)));
     let config = FirmwareUpdaterConfig::from_linkerfile(&flash, &flash);
     let mut magic = AlignedBuffer([0; WRITE_SIZE]);
     let mut updater = FirmwareUpdater::new(config, &mut magic.0);
+
+    spawner
+        .spawn(measure(SoilSensor::new(
+            module.io8,
+            module.io9,
+            module.io7,
+            module.io4,
+            module.io5,
+            module.io3,
+            module.io2,
+            module.io2_9_exti.degrade(),
+        )))
+        .unwrap();
 
     //let mut memory = module.memory;
     //let mut buff = [0u8; 3];

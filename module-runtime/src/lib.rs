@@ -2,7 +2,7 @@
 #![macro_use]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
-#![allow(stable_features, unknown_lints, async_fn_in_trait, dead_code)]
+#![allow(stable_features, unknown_lints, async_fn_in_trait, dead_code, unused_imports)]
 
 pub use cortex_m;
 pub use cortex_m_rt;
@@ -34,6 +34,7 @@ use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
 use embassy_stm32::rcc::*;
 use embassy_stm32::spi::{self, Spi};
 use embassy_stm32::time::Hertz;
+use embassy_stm32::timer;
 use embassy_stm32::usart::{self, Uart};
 use embassy_stm32::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
@@ -159,9 +160,32 @@ impl ModuleMemory {
 
 pub struct ModuleInterface {
     pub lora: ModuleLoRa,
-    pub host: ModuleHost,
     pub flash: peripherals::FLASH,
     pub memory: ModuleMemory,
+
+    #[cfg(feature = "host_interface")]
+    pub host: ModuleHost,
+
+    pub io1: AnyPin,
+    pub io2: AnyPin,
+    pub io3: AnyPin,
+    pub io4: AnyPin,
+    pub io5: AnyPin,
+    pub io6: AnyPin,
+    pub io7: AnyPin,
+    pub io8: AnyPin,
+    pub io9: AnyPin,
+    pub io10: AnyPin,
+    pub io11: AnyPin,
+
+    pub io1_8_exti: peripherals::EXTI7,
+    pub io2_9_exti: peripherals::EXTI6,
+    pub io3_11_exti: peripherals::EXTI4,
+    pub io4_exti: peripherals::EXTI2,
+    pub io5_exti: peripherals::EXTI1,
+    pub io6_exti: peripherals::EXTI0,
+    pub io7_exti: peripherals::EXTI8,
+    pub io10_exti: peripherals::EXTI5,
 
     vdd_switch: Output<'static>,
 }
@@ -227,23 +251,27 @@ pub async fn init(
         .create_modulation_params(
             SpreadingFactor::_5,
             Bandwidth::_250KHz,
-            CodingRate::_4_8,
+            CodingRate::_4_5,
             LORA_FREQUENCY_IN_HZ,
         )
         .unwrap();
 
-    let mut lpuart1_config = usart::Config::default();
-    lpuart1_config.baudrate = 115200;
-    let lpuart1 = Uart::new(
-        p.LPUART1,
-        p.PA3,
-        p.PA2,
-        Irqs,
-        p.DMA1_CH3,
-        p.DMA1_CH4,
-        lpuart1_config,
-    )
-    .unwrap();
+    #[cfg(feature = "host_interface")]
+    let mut host_uart = {
+        let mut lpuart1_config = usart::Config::default();
+        lpuart1_config.baudrate = 115200;
+        let lpuart1 = Uart::new(
+            p.LPUART1,
+            p.PA3,
+            p.PA2,
+            Irqs,
+            p.DMA1_CH3,
+            p.DMA1_CH4,
+            lpuart1_config,
+        )
+        .unwrap();
+        lpuart1
+    };
 
     let led = match module_config.version {
         ModuleVersion::NucleoWL55JC => p.PB15.degrade(),
@@ -280,7 +308,6 @@ pub async fn init(
     let memory = ModuleMemory { spi, ncs, hold };
 
     ModuleInterface {
-        host: ModuleHost { uart: lpuart1 },
         lora: ModuleLoRa {
             lora,
             lora_modulation,
@@ -293,6 +320,30 @@ pub async fn init(
         flash: p.FLASH,
         memory,
         vdd_switch,
+
+        io1: p.PA7.degrade(),
+        io2: p.PA6.degrade(),
+        io3: p.PA4.degrade(),
+        io4: p.PA2.degrade(),
+        io5: p.PA1.degrade(),
+        io6: p.PA0.degrade(),
+        io7: p.PB8.degrade(),
+        io8: p.PB7.degrade(),
+        io9: p.PB6.degrade(),
+        io10: p.PB5.degrade(),
+        io11: p.PB4.degrade(),
+
+        io1_8_exti: p.EXTI7,
+        io2_9_exti: p.EXTI6,
+        io3_11_exti: p.EXTI4,
+        io4_exti: p.EXTI2,
+        io5_exti: p.EXTI1,
+        io6_exti: p.EXTI0,
+        io7_exti: p.EXTI8,
+        io10_exti: p.EXTI5,
+
+        #[cfg(feature = "host_interface")]
+        host: ModuleHost { uart: host_uart },
     }
 }
 
