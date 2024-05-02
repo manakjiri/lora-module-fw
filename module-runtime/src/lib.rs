@@ -36,9 +36,10 @@ use embassy_stm32::spi::{self, Spi};
 use embassy_stm32::time::Hertz;
 use embassy_stm32::timer;
 use embassy_stm32::usart::{self, Uart};
+use embassy_stm32::exti::{self, Channel};
 use embassy_stm32::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::channel::Channel;
+use embassy_sync::channel;
 use embassy_time::{Delay, Timer};
 use embedded_hal::digital::{OutputPin, PinState};
 use lora_phy::mod_params::*;
@@ -169,6 +170,7 @@ pub struct ModuleInterface {
     pub io1: AnyPin,
     pub io2: AnyPin,
     pub io3: AnyPin,
+    #[cfg(not(feature = "host_interface"))]
     pub io4: AnyPin,
     pub io5: AnyPin,
     pub io6: AnyPin,
@@ -178,14 +180,14 @@ pub struct ModuleInterface {
     pub io10: AnyPin,
     pub io11: AnyPin,
 
-    pub io1_8_exti: peripherals::EXTI7,
-    pub io2_9_exti: peripherals::EXTI6,
-    pub io3_11_exti: peripherals::EXTI4,
-    pub io4_exti: peripherals::EXTI2,
-    pub io5_exti: peripherals::EXTI1,
-    pub io6_exti: peripherals::EXTI0,
-    pub io7_exti: peripherals::EXTI8,
-    pub io10_exti: peripherals::EXTI5,
+    pub io1_8_exti: exti::AnyChannel,
+    pub io2_9_exti: exti::AnyChannel,
+    pub io3_11_exti: exti::AnyChannel,
+    pub io4_exti: exti::AnyChannel,
+    pub io5_exti: exti::AnyChannel,
+    pub io6_exti: exti::AnyChannel,
+    pub io7_exti: exti::AnyChannel,
+    pub io10_exti: exti::AnyChannel,
 
     vdd_switch: Output<'static>,
 }
@@ -324,6 +326,7 @@ pub async fn init(
         io1: p.PA7.degrade(),
         io2: p.PA6.degrade(),
         io3: p.PA4.degrade(),
+        #[cfg(not(feature = "host_interface"))]
         io4: p.PA2.degrade(),
         io5: p.PA1.degrade(),
         io6: p.PA0.degrade(),
@@ -333,14 +336,14 @@ pub async fn init(
         io10: p.PB5.degrade(),
         io11: p.PB4.degrade(),
 
-        io1_8_exti: p.EXTI7,
-        io2_9_exti: p.EXTI6,
-        io3_11_exti: p.EXTI4,
-        io4_exti: p.EXTI2,
-        io5_exti: p.EXTI1,
-        io6_exti: p.EXTI0,
-        io7_exti: p.EXTI8,
-        io10_exti: p.EXTI5,
+        io1_8_exti: p.EXTI7.degrade(),
+        io2_9_exti: p.EXTI6.degrade(),
+        io3_11_exti: p.EXTI4.degrade(),
+        io4_exti: p.EXTI2.degrade(),
+        io5_exti: p.EXTI1.degrade(),
+        io6_exti: p.EXTI0.degrade(),
+        io7_exti: p.EXTI8.degrade(),
+        io10_exti: p.EXTI5.degrade(),
 
         #[cfg(feature = "host_interface")]
         host: ModuleHost { uart: host_uart },
@@ -351,7 +354,7 @@ pub enum LedCommand {
     FlashShort,
 }
 
-static STATUS_LED: Channel<ThreadModeRawMutex, LedCommand, 1> = Channel::new();
+static STATUS_LED: channel::Channel<ThreadModeRawMutex, LedCommand, 1> = channel::Channel::new();
 
 pub async fn status_led(cmd: LedCommand) {
     STATUS_LED.send(cmd).await;
@@ -360,7 +363,13 @@ pub async fn status_led(cmd: LedCommand) {
 #[embassy_executor::task]
 async fn status_led_task(led: AnyPin) {
     let mut led = Output::new(led, Level::Low, Speed::Low);
+    /* do welcome flash */
+    for _ in 0..6 {
+        led.toggle();
+        Timer::after_millis(50).await;
+    }
     led.set_low();
+    /* wait for commands */
     loop {
         match STATUS_LED.receive().await {
             LedCommand::FlashShort => {

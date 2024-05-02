@@ -163,7 +163,7 @@ async fn main(spawner: Spawner) {
             module.io5,
             module.io3,
             module.io2,
-            module.io2_9_exti.degrade(),
+            module.io2_9_exti,
         )))
         .unwrap();
 
