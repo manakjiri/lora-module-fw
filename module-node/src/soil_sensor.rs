@@ -22,7 +22,12 @@ pub enum SoilSensorResult {
     Ok(Duration),
 }
 
-impl SoilSensor<'_> {
+pub enum SoilSensorRange {
+    Low,
+    High,
+}
+
+impl<'a> SoilSensor<'a> {
     pub fn new(
         mux_in1: AnyPin,
         mux_in2: AnyPin,
@@ -44,10 +49,19 @@ impl SoilSensor<'_> {
         }
     }
 
-    pub async fn sample_current_channel(&mut self) -> SoilSensorResult {
-        self.chg_47k.set_as_output(Speed::Low);
-        self.chg_47k.set_low();
-        self.chg_4m7.set_as_input(Pull::None);
+    pub async fn sample_current_channel(&mut self, range: SoilSensorRange) -> SoilSensorResult {
+        match range {
+            SoilSensorRange::Low => {
+                self.chg_47k.set_as_output(Speed::Low);
+                self.chg_47k.set_low();
+                self.chg_4m7.set_as_input(Pull::None);
+            },
+            SoilSensorRange::High => {
+                self.chg_4m7.set_as_output(Speed::Low);
+                self.chg_4m7.set_low();
+                self.chg_47k.set_as_input(Pull::None);
+            },
+        }
         /* start discharging */
         self.mux_nen.set_low();
         self.dischg.set_low();
@@ -58,17 +72,44 @@ impl SoilSensor<'_> {
 
         /* measure */
         //info!("measuring");
-        self.chg_47k.set_high();
+        match range {
+            SoilSensorRange::Low => {
+                self.chg_47k.set_high();
+            },
+            SoilSensorRange::High => {
+                self.chg_4m7.set_high();
+            },
+        }
         let start = Instant::now();
-        let ret = match select(self.comp.wait_for_high(), Timer::after_millis(1)).await {
-            Either::First(_) => SoilSensorResult::Ok(start.elapsed()),
+        let ret = match select(self.comp.wait_for_high(), Timer::after_millis(2)).await {
+            Either::First(_) => {
+                let mut elapsed = start.elapsed();
+                match range {
+                    SoilSensorRange::Low => {
+                        elapsed *= 10;
+                    },
+                    SoilSensorRange::High => {
+                        elapsed *= 1;
+                    },
+                }
+                SoilSensorResult::Ok(elapsed)
+            },
             Either::Second(_) => SoilSensorResult::Timeout,
         };
         //info!("comp: {}", comp.is_high());
+        /* stop measuring */
         self.chg_47k.set_as_input(Pull::None);
+        self.chg_4m7.set_as_input(Pull::None);
         self.dischg.set_low();
-
         self.mux_nen.set_high();
+        ret
+    }
+
+    pub async fn sample_current_channel_autorange(&mut self) -> SoilSensorResult {
+        let mut ret = self.sample_current_channel(SoilSensorRange::High).await;
+        if let SoilSensorResult::Timeout = ret {
+            ret = self.sample_current_channel(SoilSensorRange::Low).await;
+        }
         ret
     }
 
@@ -81,7 +122,7 @@ impl SoilSensor<'_> {
         let mut results = [SoilSensorResult::Timeout; 4];
         for i in 0..4 {
             self.set_channel(i);
-            results[i as usize] = self.sample_current_channel().await;
+            results[i as usize] = self.sample_current_channel_autorange().await;
         }
         results
     }
