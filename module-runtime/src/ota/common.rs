@@ -79,7 +79,7 @@ pub(super) async fn lora_transmit(
     destination: usize,
     packet: &OtaPacket,
 ) -> Result<(), OtaError> {
-    let mut p = LoRaPacket::new(destination);
+    let mut p = LoRaPacket::new(destination, LoRaPacketType::OTA);
     p.payload = postcard::to_vec(packet).map_err(err::serialize)?;
     lora.transmit(&mut p).await.map_err(err::transmit)
 }
@@ -91,7 +91,7 @@ pub(super) async fn lora_transmit_until_response(
     retries: usize,
 ) -> Result<OtaPacket, OtaError> {
     /* serialize the packet */
-    let mut p = LoRaPacket::new(destination);
+    let mut p = LoRaPacket::new(destination, LoRaPacketType::OTA);
     p.payload = postcard::to_vec(packet).map_err(err::serialize)?;
     /* loop until we reach retries or get an error */
     let mut last_error: Option<OtaError> = None;
