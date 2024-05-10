@@ -1,7 +1,7 @@
 use embassy_futures::select::*;
 use embassy_stm32::{
-    exti::{AnyChannel, Channel, ExtiInput},
-    gpio::{low_level::Pin, AnyPin, Level, Output, OutputOpenDrain, Pull, Speed, Flex},
+    exti::{AnyChannel, ExtiInput},
+    gpio::{AnyPin, Level, Output, OutputOpenDrain, Pull, Speed, Flex},
 };
 use embassy_time::{Duration, Instant, Timer};
 use module_runtime::*;
