@@ -1,10 +1,11 @@
 use defmt::*;
 use gateway_host_schema::{self, HostPacket};
-use module_runtime::{gateway_host_schema::GatewayPacket, heapless::Vec, *};
+use module_runtime::{gateway_host_schema::GatewayPacket, heapless::Vec, lora_phy::mod_params::RadioError, *};
 
 #[derive(Debug, defmt::Format, PartialEq)]
 pub enum Error {
     Ota(OtaError),
+    LoRa(RadioError)
 }
 
 pub struct Gateway {
@@ -58,7 +59,7 @@ impl Gateway {
         }
         Ok(())
     }
-
+    
     pub async fn process_host_message(
         &mut self,
         lora: &mut ModuleLoRa,
@@ -111,6 +112,12 @@ impl Gateway {
                     }
                 });
                 Some(packet)
+            },
+            HostPacket::SoilSensor(req) => {
+                let mut p = LoRaPacket::new(req.destination_address, LoRaPacketType::SoilSensor);
+                p.payload.push(0).unwrap();
+                lora.transmit(&mut p).await.map_err(Error::LoRa)?;
+                None
             }
         };
         Ok(ret)

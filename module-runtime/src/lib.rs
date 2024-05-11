@@ -189,7 +189,7 @@ pub struct ModuleInterface {
     pub io7_exti: exti::AnyChannel,
     pub io10_exti: exti::AnyChannel,
 
-    vdd_switch: Output<'static>,
+    pub vdd_switch: Output<'static>,
 }
 
 impl ModuleInterface {
@@ -213,16 +213,23 @@ pub async fn init(
         mode: HseMode::Bypass,
         prescaler: HsePrescaler::DIV1,
     });
-    config.rcc.sys = Sysclk::PLL1_R;
-    //config.rcc.mux = mux::
-    config.rcc.pll = Some(Pll {
-        source: PllSource::HSE,
-        prediv: PllPreDiv::DIV2,
-        mul: PllMul::MUL6,
-        divp: None,
-        divq: Some(PllQDiv::DIV2), // PLL1_Q clock (32 / 2 * 6 / 2), used for RNG
-        divr: Some(PllRDiv::DIV2), // sysclk 48Mhz clock (32 / 2 * 6 / 2)
-    });
+    config.rcc.sys = match module_config.version {
+        ModuleVersion::NucleoWL55JC => Sysclk::PLL1_R, // 48 MHz
+        ModuleVersion::Lumia => Sysclk::MSI // Default 1 MHz
+    };
+    config.rcc.pll = match module_config.version {
+        ModuleVersion::NucleoWL55JC => {
+            Some(Pll {
+                source: PllSource::HSE,
+                prediv: PllPreDiv::DIV2,
+                mul: PllMul::MUL6,
+                divp: None,
+                divq: None, //Some(PllQDiv::DIV2), // PLL1_Q clock (32 / 2 * 6 / 2), used for RNG
+                divr: Some(PllRDiv::DIV2), // sysclk 48Mhz clock (32 / 2 * 6 / 2)
+            })
+        }
+        ModuleVersion::Lumia => None
+    };
     let p = embassy_stm32::init(config);
 
     let vdd_switch = Output::new(p.PB2, Level::High, Speed::Low);

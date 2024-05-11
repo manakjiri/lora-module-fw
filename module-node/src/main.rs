@@ -9,7 +9,7 @@ mod ota_memory;
 
 use defmt::*;
 use embassy_executor::Spawner;
-use module_runtime::*;
+use module_runtime::{embassy_time::Timer, *};
 use embassy_boot_stm32::{AlignedBuffer, FirmwareUpdater, FirmwareUpdaterConfig};
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_stm32::flash::{Flash, WRITE_SIZE};
@@ -20,7 +20,7 @@ use ota_memory::OtaMemory;
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let mut module = init(ModuleConfig::new(ModuleVersion::Lumia), &spawner).await;
-    module.set_vdd_enable(true);
+    //module.set_vdd_enable(true);
     info!("hello from node {}", module.lora.address);
 
     let flash = Mutex::new(BlockingAsync::new(Flash::new_blocking(module.flash)));
@@ -57,18 +57,23 @@ async fn main(spawner: Spawner) {
                     }
                 },
                 LoRaPacketType::SoilSensor => {
-                    let samples = soil_sensor.sample_all().await;
+                    module.vdd_switch.set_high();
+                    Timer::after_millis(10).await;
+
+                    let samples = soil_sensor.sample_all_average().await;
                     let mut resp = LoRaPacket::new(p.source, LoRaPacketType::SoilSensor);
                     for sample in samples {
                         let bytes = match sample {
                             SoilSensorResult::Timeout => [0, 0],
                             SoilSensorResult::Ok(d) => {
-                                (d.as_micros() as u16).to_le_bytes().try_into().unwrap()
+                                d.to_le_bytes().try_into().unwrap()
                             }
                         };
                         resp.payload.push(bytes[0]).unwrap();
                         resp.payload.push(bytes[1]).unwrap();
                     }
+                    
+                    module.vdd_switch.set_low();
                     match lora.transmit(&mut resp).await {
                         Ok(_) => {}
                         Err(e) => {

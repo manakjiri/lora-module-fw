@@ -16,6 +16,7 @@ pub const HEADER_LENGTH: usize = 5;
 pub const CHECKSUM_LENGTH: usize = 4;
 pub const PAYLOAD_LENGTH: usize = PACKET_LENGTH - HEADER_LENGTH - CHECKSUM_LENGTH;
 
+#[derive(defmt::Format, Debug, Clone, Copy)]
 pub enum LoRaPacketType {
     Ping,
     OTA,

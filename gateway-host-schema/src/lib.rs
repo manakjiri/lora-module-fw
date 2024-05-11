@@ -26,20 +26,31 @@ pub struct OtaStatus {
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
+pub struct SoilSensorRequest {
+    pub destination_address: usize,
+}
+
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum HostPacket {
     PingRequest,
+    
     OtaGetStatus,
     OtaInit(OtaInitRequest),
     OtaData(OtaData),
     OtaDoneRequest,
     OtaAbortRequest,
+
+    SoilSensor(SoilSensorRequest),
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum GatewayPacket {
     PingResponse,
+
     OtaInitAck,
     OtaStatus(OtaStatus),
     OtaDoneAck,
     OtaAbortAck,
+
+    SoilSensorMoisture([u16; 4]),
 }
