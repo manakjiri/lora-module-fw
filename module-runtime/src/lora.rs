@@ -200,4 +200,8 @@ impl ModuleLoRa {
             Err(err) => Err(err),
         }
     }
+
+    pub async fn sleep(&mut self) -> Result<(), RadioError> {
+        self.lora.enter_standby().await
+    }
 }

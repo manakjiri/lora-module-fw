@@ -17,6 +17,27 @@ use embassy_sync::mutex::Mutex;
 use soil_sensor::{SoilSensor, SoilSensorResult};
 use ota_memory::OtaMemory;
 
+async fn soil_sensor_measure_and_transmit<'a>(soil_sensor: &mut SoilSensor<'a>, lora: &mut ModuleLoRa, destination_address: usize) {
+    let samples = soil_sensor.sample_all_average().await;
+    let mut resp = LoRaPacket::new(destination_address, LoRaPacketType::SoilSensor);
+    for sample in samples {
+        let bytes = match sample {
+            SoilSensorResult::Timeout => [0, 0],
+            SoilSensorResult::Ok(d) => {
+                d.to_le_bytes().try_into().unwrap()
+            }
+        };
+        resp.payload.push(bytes[0]).unwrap();
+        resp.payload.push(bytes[1]).unwrap();
+    }
+    match lora.transmit(&mut resp).await {
+        Ok(_) => {}
+        Err(e) => {
+            error!("lora tx error: {}", e)
+        }
+    }
+}
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let mut module = init(ModuleConfig::new(ModuleVersion::Lumia), &spawner).await;
@@ -59,27 +80,8 @@ async fn main(spawner: Spawner) {
                 LoRaPacketType::SoilSensor => {
                     module.vdd_switch.set_high();
                     Timer::after_millis(10).await;
-
-                    let samples = soil_sensor.sample_all_average().await;
-                    let mut resp = LoRaPacket::new(p.source, LoRaPacketType::SoilSensor);
-                    for sample in samples {
-                        let bytes = match sample {
-                            SoilSensorResult::Timeout => [0, 0],
-                            SoilSensorResult::Ok(d) => {
-                                d.to_le_bytes().try_into().unwrap()
-                            }
-                        };
-                        resp.payload.push(bytes[0]).unwrap();
-                        resp.payload.push(bytes[1]).unwrap();
-                    }
-                    
+                    soil_sensor_measure_and_transmit(&mut soil_sensor, &mut lora, p.source).await;
                     module.vdd_switch.set_low();
-                    match lora.transmit(&mut resp).await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!("lora tx error: {}", e)
-                        }
-                    }
                 },
                 _ => {}
             },
