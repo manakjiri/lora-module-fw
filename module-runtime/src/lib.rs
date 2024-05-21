@@ -361,7 +361,7 @@ pub enum LedCommand {
     FlashShort,
 }
 
-static STATUS_LED: channel::Channel<ThreadModeRawMutex, LedCommand, 1> = channel::Channel::new();
+static STATUS_LED: channel::Channel<ThreadModeRawMutex, LedCommand, 3> = channel::Channel::new();
 
 pub async fn status_led(cmd: LedCommand) {
     STATUS_LED.send(cmd).await;
@@ -385,5 +385,6 @@ async fn status_led_task(led: AnyPin) {
                 led.set_low();
             }
         }
+        Timer::after_millis(50).await;
     }
 }
