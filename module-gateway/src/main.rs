@@ -35,14 +35,28 @@ pub async fn gateway_task(mut lora: ModuleLoRa) {
             },
             Either::Second(lora_result) => match lora_result {
                 Ok(p) => {
-                    match gw.process_peer_message(&mut lora, p).await {
-                        Ok(resp) => {
-                            if let Some(r) = resp {
-                                GATEWAY2HOST.send(r).await;
+                    match p.packet_type {
+                        LoRaPacketType::OTA => {
+                            match gw.process_peer_message(&mut lora, p).await {
+                                Ok(resp) => {
+                                    if let Some(r) = resp {
+                                        GATEWAY2HOST.send(r).await;
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("failed to process peer message: {}", e);
+                                }
                             }
+                        },
+                        LoRaPacketType::SoilSensor => {
+                            let mut data = [0u16; 4];
+                            for i in 0..4 {
+                                data[i] = u16::from_le_bytes(p.payload[i*2..i*2+2].try_into().unwrap());
+                            }
+                            GATEWAY2HOST.send(GatewayPacket::SoilSensorMoisture(data)).await;
                         }
-                        Err(e) => {
-                            error!("failed to process peer message: {}", e);
+                        _ => {
+                            error!("unexpected packet type: {:?}", p.packet_type);
                         }
                     }
                     status_led(LedCommand::FlashShort).await;

@@ -1,5 +1,4 @@
 use crate::iv::{Stm32wlInterfaceVariant, SubghzSpiDevice};
-
 use defmt::info;
 use embassy_futures::select::*;
 use embassy_stm32::crc;
@@ -13,13 +12,21 @@ use lora_phy::sx126x::Sx126x;
 use lora_phy::LoRa;
 
 pub const PACKET_LENGTH: usize = 128;
-pub const HEADER_LENGTH: usize = 4;
+pub const HEADER_LENGTH: usize = 5;
 pub const CHECKSUM_LENGTH: usize = 4;
 pub const PAYLOAD_LENGTH: usize = PACKET_LENGTH - HEADER_LENGTH - CHECKSUM_LENGTH;
+
+#[derive(defmt::Format, Debug, Clone, Copy)]
+pub enum LoRaPacketType {
+    Ping,
+    OTA,
+    SoilSensor,
+}
 
 pub struct LoRaPacket {
     pub source: usize,
     pub destination: usize,
+    pub packet_type: LoRaPacketType,
     pub payload: Vec<u8, PAYLOAD_LENGTH>,
 }
 
@@ -39,16 +46,17 @@ pub struct ModuleLoRa {
 }
 
 impl LoRaPacket {
-    pub fn new(destination: usize) -> Self {
+    pub fn new(destination: usize, packet_type: LoRaPacketType) -> Self {
         LoRaPacket {
             destination,
             source: 0,
+            packet_type,
             payload: Vec::new(),
         }
     }
 
-    pub fn new_with_payload(destination: usize, payload: Vec<u8, PAYLOAD_LENGTH>) -> Self {
-        let mut ret = Self::new(destination);
+    pub fn new_with_payload(destination: usize, packet_type: LoRaPacketType, payload: Vec<u8, PAYLOAD_LENGTH>) -> Self {
+        let mut ret = Self::new(destination, packet_type);
         ret.payload = payload;
         ret
     }
@@ -59,7 +67,13 @@ impl LoRaPacket {
         }
         Some(LoRaPacket {
             destination: u16::from_le_bytes(buff[0..2].try_into().ok()?) as usize,
-            source: u16::from_le_bytes(buff[2..HEADER_LENGTH].try_into().ok()?) as usize,
+            source: u16::from_le_bytes(buff[2..4].try_into().ok()?) as usize,
+            packet_type: match buff[4] {
+                0 => LoRaPacketType::Ping,
+                1 => LoRaPacketType::OTA,
+                2 => LoRaPacketType::SoilSensor,
+                _ => return None,
+            },
             payload: Vec::from_slice(&buff[HEADER_LENGTH..]).ok()?,
         })
     }
@@ -70,13 +84,19 @@ impl LoRaPacket {
             return None;
         }
         buff[0..2].copy_from_slice(&(self.destination as u16).to_le_bytes());
-        buff[2..HEADER_LENGTH].copy_from_slice(&(self.source as u16).to_le_bytes());
+        buff[2..4].copy_from_slice(&(self.source as u16).to_le_bytes());
+        buff[4] = match self.packet_type {
+            LoRaPacketType::Ping => 0,
+            LoRaPacketType::OTA => 1,
+            LoRaPacketType::SoilSensor => 2,
+        };
         buff[HEADER_LENGTH..HEADER_LENGTH + self.payload.len()].copy_from_slice(&self.payload);
         Some(len)
     }
 }
 
 impl ModuleLoRa {
+    /* sets the source address automatically */
     pub async fn transmit(&mut self, packet: &mut LoRaPacket) -> Result<(), RadioError> {
         packet.source = self.address;
         let mut buff = [0u8; PACKET_LENGTH];
@@ -179,5 +199,9 @@ impl ModuleLoRa {
             }
             Err(err) => Err(err),
         }
+    }
+
+    pub async fn sleep(&mut self) -> Result<(), RadioError> {
+        self.lora.enter_standby().await
     }
 }

@@ -2,7 +2,7 @@
 #![macro_use]
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
-#![allow(stable_features, unknown_lints, async_fn_in_trait, dead_code)]
+#![allow(stable_features, unknown_lints, async_fn_in_trait, dead_code, unused_imports)]
 
 pub use cortex_m;
 pub use cortex_m_rt;
@@ -34,10 +34,12 @@ use embassy_stm32::gpio::{AnyPin, Level, Output, Pin, Speed};
 use embassy_stm32::rcc::*;
 use embassy_stm32::spi::{self, Spi};
 use embassy_stm32::time::Hertz;
+use embassy_stm32::timer;
 use embassy_stm32::usart::{self, Uart};
+use embassy_stm32::exti::{self, Channel};
 use embassy_stm32::{bind_interrupts, peripherals};
 use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
-use embassy_sync::channel::Channel;
+use embassy_sync::channel;
 use embassy_time::{Delay, Timer};
 use embedded_hal::digital::{OutputPin, PinState};
 use lora_phy::mod_params::*;
@@ -159,11 +161,35 @@ impl ModuleMemory {
 
 pub struct ModuleInterface {
     pub lora: ModuleLoRa,
-    pub host: ModuleHost,
     pub flash: peripherals::FLASH,
     pub memory: ModuleMemory,
 
-    vdd_switch: Output<'static>,
+    #[cfg(feature = "host_interface")]
+    pub host: ModuleHost,
+
+    pub io1: AnyPin,
+    pub io2: AnyPin,
+    pub io3: AnyPin,
+    #[cfg(not(feature = "host_interface"))]
+    pub io4: AnyPin,
+    pub io5: AnyPin,
+    pub io6: AnyPin,
+    pub io7: AnyPin,
+    pub io8: AnyPin,
+    pub io9: AnyPin,
+    pub io10: AnyPin,
+    pub io11: AnyPin,
+
+    pub io1_8_exti: exti::AnyChannel,
+    pub io2_9_exti: exti::AnyChannel,
+    pub io3_11_exti: exti::AnyChannel,
+    pub io4_exti: exti::AnyChannel,
+    pub io5_exti: exti::AnyChannel,
+    pub io6_exti: exti::AnyChannel,
+    pub io7_exti: exti::AnyChannel,
+    pub io10_exti: exti::AnyChannel,
+
+    pub vdd_switch: Output<'static>,
 }
 
 impl ModuleInterface {
@@ -187,16 +213,23 @@ pub async fn init(
         mode: HseMode::Bypass,
         prescaler: HsePrescaler::DIV1,
     });
-    config.rcc.sys = Sysclk::PLL1_R;
-    //config.rcc.mux = mux::
-    config.rcc.pll = Some(Pll {
-        source: PllSource::HSE,
-        prediv: PllPreDiv::DIV2,
-        mul: PllMul::MUL6,
-        divp: None,
-        divq: Some(PllQDiv::DIV2), // PLL1_Q clock (32 / 2 * 6 / 2), used for RNG
-        divr: Some(PllRDiv::DIV2), // sysclk 48Mhz clock (32 / 2 * 6 / 2)
-    });
+    config.rcc.sys = match module_config.version {
+        ModuleVersion::NucleoWL55JC => Sysclk::PLL1_R, // 48 MHz
+        ModuleVersion::Lumia => Sysclk::MSI // Default 1 MHz
+    };
+    config.rcc.pll = match module_config.version {
+        ModuleVersion::NucleoWL55JC => {
+            Some(Pll {
+                source: PllSource::HSE,
+                prediv: PllPreDiv::DIV2,
+                mul: PllMul::MUL6,
+                divp: None,
+                divq: None, //Some(PllQDiv::DIV2), // PLL1_Q clock (32 / 2 * 6 / 2), used for RNG
+                divr: Some(PllRDiv::DIV2), // sysclk 48Mhz clock (32 / 2 * 6 / 2)
+            })
+        }
+        ModuleVersion::Lumia => None
+    };
     let p = embassy_stm32::init(config);
 
     let vdd_switch = Output::new(p.PB2, Level::High, Speed::Low);
@@ -227,23 +260,27 @@ pub async fn init(
         .create_modulation_params(
             SpreadingFactor::_5,
             Bandwidth::_250KHz,
-            CodingRate::_4_8,
+            CodingRate::_4_5,
             LORA_FREQUENCY_IN_HZ,
         )
         .unwrap();
 
-    let mut lpuart1_config = usart::Config::default();
-    lpuart1_config.baudrate = 115200;
-    let lpuart1 = Uart::new(
-        p.LPUART1,
-        p.PA3,
-        p.PA2,
-        Irqs,
-        p.DMA1_CH3,
-        p.DMA1_CH4,
-        lpuart1_config,
-    )
-    .unwrap();
+    #[cfg(feature = "host_interface")]
+    let mut host_uart = {
+        let mut lpuart1_config = usart::Config::default();
+        lpuart1_config.baudrate = 115200;
+        let lpuart1 = Uart::new(
+            p.LPUART1,
+            p.PA3,
+            p.PA2,
+            Irqs,
+            p.DMA1_CH3,
+            p.DMA1_CH4,
+            lpuart1_config,
+        )
+        .unwrap();
+        lpuart1
+    };
 
     let led = match module_config.version {
         ModuleVersion::NucleoWL55JC => p.PB15.degrade(),
@@ -280,7 +317,6 @@ pub async fn init(
     let memory = ModuleMemory { spi, ncs, hold };
 
     ModuleInterface {
-        host: ModuleHost { uart: lpuart1 },
         lora: ModuleLoRa {
             lora,
             lora_modulation,
@@ -293,6 +329,31 @@ pub async fn init(
         flash: p.FLASH,
         memory,
         vdd_switch,
+
+        io1: p.PA7.degrade(),
+        io2: p.PA6.degrade(),
+        io3: p.PA4.degrade(),
+        #[cfg(not(feature = "host_interface"))]
+        io4: p.PA2.degrade(),
+        io5: p.PA1.degrade(),
+        io6: p.PA0.degrade(),
+        io7: p.PB8.degrade(),
+        io8: p.PB7.degrade(),
+        io9: p.PB6.degrade(),
+        io10: p.PB5.degrade(),
+        io11: p.PB4.degrade(),
+
+        io1_8_exti: p.EXTI7.degrade(),
+        io2_9_exti: p.EXTI6.degrade(),
+        io3_11_exti: p.EXTI4.degrade(),
+        io4_exti: p.EXTI2.degrade(),
+        io5_exti: p.EXTI1.degrade(),
+        io6_exti: p.EXTI0.degrade(),
+        io7_exti: p.EXTI8.degrade(),
+        io10_exti: p.EXTI5.degrade(),
+
+        #[cfg(feature = "host_interface")]
+        host: ModuleHost { uart: host_uart },
     }
 }
 
@@ -300,7 +361,7 @@ pub enum LedCommand {
     FlashShort,
 }
 
-static STATUS_LED: Channel<ThreadModeRawMutex, LedCommand, 1> = Channel::new();
+static STATUS_LED: channel::Channel<ThreadModeRawMutex, LedCommand, 3> = channel::Channel::new();
 
 pub async fn status_led(cmd: LedCommand) {
     STATUS_LED.send(cmd).await;
@@ -309,7 +370,13 @@ pub async fn status_led(cmd: LedCommand) {
 #[embassy_executor::task]
 async fn status_led_task(led: AnyPin) {
     let mut led = Output::new(led, Level::Low, Speed::Low);
+    /* do welcome flash */
+    for _ in 0..6 {
+        led.toggle();
+        Timer::after_millis(50).await;
+    }
     led.set_low();
+    /* wait for commands */
     loop {
         match STATUS_LED.receive().await {
             LedCommand::FlashShort => {
@@ -318,5 +385,6 @@ async fn status_led_task(led: AnyPin) {
                 led.set_low();
             }
         }
+        Timer::after_millis(50).await;
     }
 }

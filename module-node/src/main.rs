@@ -4,123 +4,37 @@
 #![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 
+mod soil_sensor;
+mod ota_memory;
+
 use defmt::*;
 use embassy_executor::Spawner;
-use module_runtime::{embassy_time::Timer, heapless::Vec, *};
-
+use module_runtime::{embassy_time::Timer, *};
 use embassy_boot_stm32::{AlignedBuffer, FirmwareUpdater, FirmwareUpdaterConfig};
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_stm32::flash::{Flash, WRITE_SIZE};
 use embassy_sync::mutex::Mutex;
-use heapless::FnvIndexMap;
+use soil_sensor::{SoilSensor, SoilSensorResult};
+use ota_memory::OtaMemory;
 
-const PAGE_SIZE: usize = 2048;
-
-struct OtaPage {
-    buffer: [u8; PAGE_SIZE],
-    last_address: usize,
-    address: usize,
-}
-
-impl OtaPage {
-    fn new(address: usize) -> Self {
-        OtaPage {
-            buffer: [0u8; PAGE_SIZE],
-            last_address: 0,
-            address,
-        }
-    }
-
-    fn write(&mut self, offset: usize, data: &[u8]) -> bool {
-        if self.last_address != PAGE_SIZE {
-            let start = offset - self.address;
-            let end = start + data.len();
-            if end > self.buffer.len() {
-                // something weird happened, lets hope for the best next time
-                return false;
+async fn soil_sensor_measure_and_transmit<'a>(soil_sensor: &mut SoilSensor<'a>, lora: &mut ModuleLoRa, destination_address: usize) {
+    let samples = soil_sensor.sample_all_average().await;
+    let mut resp = LoRaPacket::new(destination_address, LoRaPacketType::SoilSensor);
+    for sample in samples {
+        let bytes = match sample {
+            SoilSensorResult::Timeout => [0, 0],
+            SoilSensorResult::Ok(d) => {
+                d.to_le_bytes().try_into().unwrap()
             }
-            self.buffer[start..end].copy_from_slice(data);
-            self.last_address = end;
-            true
-        } else {
-            // trying to write too far when the last block is lost and next comes
-            // we should get the missing one in the next call
-            false
-        }
+        };
+        resp.payload.push(bytes[0]).unwrap();
+        resp.payload.push(bytes[1]).unwrap();
     }
-}
-
-struct OtaMemory {
-    page: Option<OtaPage>,
-    queue: FnvIndexMap<usize, Vec<u8, 96>, 8>,
-    next_address: usize,
-    valid_up_to_address: usize,
-}
-
-impl OtaMemoryDelegate for OtaMemory {
-    async fn write(&mut self, valid_up_to: usize, offset: usize, data: &[u8]) -> bool {
-        self.valid_up_to_address = valid_up_to;
-        if self.page.is_none() {
-            self.page = Some(OtaPage::new(self.next_address))
+    match lora.transmit(&mut resp).await {
+        Ok(_) => {}
+        Err(e) => {
+            error!("lora tx error: {}", e)
         }
-        let page = self.page.as_mut().unwrap();
-
-        let mut to_pop = Vec::<usize, 16>::new();
-        for (a, d) in self.queue.iter() {
-            if *a < page.address {
-                to_pop.push(*a).unwrap();
-            } else if *a < page.address + PAGE_SIZE {
-                info!("writing from queue 0x{:x}: {}", *a, page.write(*a, &d[..]));
-                to_pop.push(*a).unwrap();
-            }
-        }
-        for i in to_pop.iter() {
-            self.queue.remove(i);
-        }
-
-        if offset < page.address {
-            warn!("offset lower than current page, ignoring");
-            true
-        } else {
-            if page.write(offset, data) {
-                true
-            } else {
-                match self.queue.insert(offset, data.iter().cloned().collect()) {
-                    Ok(_) => true,
-                    Err(_) => false,
-                }
-            }
-        }
-    }
-}
-
-impl OtaMemory {
-    fn new() -> Self {
-        OtaMemory {
-            page: None,
-            queue: FnvIndexMap::new(),
-            next_address: 0,
-            valid_up_to_address: 0,
-        }
-    }
-
-    fn get_page(&mut self) -> Option<OtaPage> {
-        match self.page.as_mut() {
-            Some(p) => {
-                if p.last_address == PAGE_SIZE && self.valid_up_to_address >= p.address + PAGE_SIZE
-                {
-                    self.next_address += PAGE_SIZE;
-                    self.page.take()
-                } else {
-                    None
-                }
-            }
-            None => None,
-        }
-    }
-
-    fn get_last_page(&mut self) -> Option<OtaPage> {
-        self.page.take()
     }
 }
 
@@ -133,7 +47,18 @@ async fn main(spawner: Spawner) {
     let flash = Mutex::new(BlockingAsync::new(Flash::new_blocking(module.flash)));
     let config = FirmwareUpdaterConfig::from_linkerfile(&flash, &flash);
     let mut magic = AlignedBuffer([0; WRITE_SIZE]);
-    let mut updater = FirmwareUpdater::new(config, &mut magic.0);
+    let mut _updater = FirmwareUpdater::new(config, &mut magic.0);
+
+    let mut soil_sensor = SoilSensor::new(
+            module.io8,
+            module.io9,
+            module.io7,
+            module.io4,
+            module.io5,
+            module.io3,
+            module.io2,
+            module.io2_9_exti,
+        );
 
     //let mut memory = module.memory;
     //let mut buff = [0u8; 3];
@@ -145,14 +70,23 @@ async fn main(spawner: Spawner) {
     let mut lora = module.lora;
     loop {
         match lora.receive_continuous().await {
-            Ok(p) => match ota_consumer.process_message(&mut lora, p).await {
-                Ok(()) => {}
-                Err(e) => {
-                    error!("ota error: {}", e)
-                }
+            Ok(p) => match p.packet_type {
+                LoRaPacketType::OTA => match ota_consumer.process_message(&mut lora, p).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("ota error: {}", e)
+                    }
+                },
+                LoRaPacketType::SoilSensor => {
+                    module.vdd_switch.set_high();
+                    Timer::after_millis(10).await;
+                    soil_sensor_measure_and_transmit(&mut soil_sensor, &mut lora, p.source).await;
+                    module.vdd_switch.set_low();
+                },
+                _ => {}
             },
             Err(e) => {
-                error!("lora error: {}", e)
+                error!("lora rx error: {}", e)
             }
         }
         status_led(LedCommand::FlashShort).await;
